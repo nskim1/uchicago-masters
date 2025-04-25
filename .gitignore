@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# VS Code settings
+.vscode/
+
+# macOS system files
+.DS_Store
+
+# Python cache
+*.log
+*.pot
+*.pyc
+*.pyo
+
+# Test coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# MyPy / type checking
+.mypy_cache/
+.dmypy.json
+.pyre/
+
+# Pytest
+.pytest_cache/
+
+# IPython history
+.history
+
+# Conda environments (if exported)
+environment.yml
+
+# Jupyter Notebook hidden state
+*.nbconvert.ipynb
