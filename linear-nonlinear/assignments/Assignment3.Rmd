@@ -1,0 +1,360 @@
+---
+title: "Assignment3"
+author: "Natalie Kim"
+date: "2024-02-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Part I: Train a binary logistic regression model on the claim_history.csv.
+Your model will predict the likelihood of filing more than one claim in one unit of exposure.  
+The standard libraries for R or Python are allowed.
+```{r}
+claims <- read.csv('/Users/xnxk040/Library/CloudStorage/OneDrive-W.WGrainger,inc/Desktop/linear-nonlinear data/claim_history.csv')
+
+# Libraries
+require(dplyr)
+require(ggplot2)
+require(caret)
+require(MASS)
+```
+
+##### You will first calculate the Frequency variable by dividing the CLM_COUNT by EXPOSURE.
+```{r}
+freq <- claims$CLM_COUNT / claims$EXPOSURE
+```
+
+##### Next, you will create a binary target variable that determines if the Frequency is strictly greater than one (i.e., the Event).
+```{r}
+event <- as.integer(freq > 1)
+```
+
+##### You will use MSTATUS, CAR_TYPE, REVOKED, and URBANICITY as the categorical predictors, and CAR_AGE, MVR_PTS, TIF, and TRAVTIME as the interval predictors.
+Your goal is to train a model that has just the right set of predictors.
+```{r}
+# Subset the 8 variables of claims dataset
+claims2 <- claims[,c('MSTATUS', 'CAR_TYPE', 'REVOKED', 'URBANICITY','CAR_AGE', 'MVR_PTS', 'TIF', 'TRAVTIME')]
+claims2$FREQUENCY <- freq
+claims2$EVENT <- event
+claims2$EXPOSURE <- claims$EXPOSURE
+
+# set class types of variables
+claims2[,1:4] <- lapply(claims2[,1:4], factor)
+str(claims2)
+```
+
+##### You need to drop all missing values (i.e., NaN) of all the predictors and the target variable before training your model.
+```{r}
+claims2 <- na.omit(claims2)
+```
+
+#### A.	(15 points) Before you train the model, we want to explore the predictors. For each predictor, generate a line chart that shows the odds of the Event by the predictor’s unique values.  The predictor’s unique values are displayed in ascending lexical order.
+```{r}
+# MSTATUS ---
+uniq_vals <- unique(claims2$MSTATUS)
+uniq_vals <- sort(uniq_vals)
+
+# Odds = # of Success Events / # of Fail Events
+success_counts <- aggregate(EVENT ~ MSTATUS, data = claims2[claims2$EVENT == 1, ], FUN = length)
+failure_counts <- aggregate(EVENT ~ MSTATUS, data = claims2[claims2$EVENT == 0, ], FUN = length)
+
+odds <- success_counts
+odds$FAILS <- failure_counts$EVENT
+odds$ODDS <- odds$EVENT / odds$FAILS
+
+# Plot Line Chart
+ggplot(odds, aes(x = MSTATUS, y = ODDS, group = 1)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "MSTATUS Unique Values", y = "Odds", title = "Odds of MSTATUS by Unique Values")
+
+# CAR_TYPE ---
+uniq_vals <- unique(claims2$CAR_TYPE)
+uniq_vals <- sort(uniq_vals)
+
+# Odds = # of Success Events / # of Fail Events
+success_counts <- aggregate(EVENT ~ CAR_TYPE, data = claims2[claims2$EVENT == 1, ], FUN = length)
+failure_counts <- aggregate(EVENT ~ CAR_TYPE, data = claims2[claims2$EVENT == 0, ], FUN = length)
+
+odds <- success_counts
+odds$FAILS <- failure_counts$EVENT
+odds$ODDS <- odds$EVENT / odds$FAILS
+
+# Plot Line Chart
+ggplot(odds, aes(x = CAR_TYPE, y = ODDS, group = 1)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "CAR_TYPE Unique Values", y = "Odds", title = "Odds of CAR_TYPE by Unique Values")
+
+# REVOKED ---
+uniq_vals <- unique(claims2$REVOKED)
+uniq_vals <- sort(uniq_vals)
+
+# Odds = # of Success Events / # of Fail Events
+success_counts <- aggregate(EVENT ~ REVOKED, data = claims2[claims2$EVENT == 1, ], FUN = length)
+failure_counts <- aggregate(EVENT ~ REVOKED, data = claims2[claims2$EVENT == 0, ], FUN = length)
+
+odds <- success_counts
+odds$FAILS <- failure_counts$EVENT
+odds$ODDS <- odds$EVENT / odds$FAILS
+
+# Plot Line Chart
+ggplot(odds, aes(x = REVOKED, y = ODDS, group = 1)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "REVOKED Unique Values", y = "Odds", title = "Odds of REVOKED by Unique Values")
+
+
+# URBANICITY ---
+uniq_vals <- unique(claims2$URBANICITY)
+uniq_vals <- sort(uniq_vals)
+
+# Odds = # of Success Events / # of Fail Events
+success_counts <- aggregate(EVENT ~ URBANICITY, data = claims2[claims2$EVENT == 1, ], FUN = length)
+failure_counts <- aggregate(EVENT ~ URBANICITY, data = claims2[claims2$EVENT == 0, ], FUN = length)
+
+odds <- success_counts
+odds$FAILS <- failure_counts$EVENT
+odds$ODDS <- odds$EVENT / odds$FAILS
+
+# Plot Line Chart
+ggplot(odds, aes(x = URBANICITY, y = ODDS, group = 1)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "URBANICITY Unique Values", y = "Odds", title = "Odds of URBANICITY by Unique Values")
+
+
+# CAR_AGE ---
+uniq_vals <- unique(claims2$CAR_AGE)
+uniq_vals <- sort(uniq_vals)
+
+# Odds = # of Success Events / # of Fail Events
+success_counts <- aggregate(EVENT ~ CAR_AGE, data = claims2[claims2$EVENT == 1, ], FUN = length)
+failure_counts <- aggregate(EVENT ~ CAR_AGE, data = claims2[claims2$EVENT == 0, ], FUN = length)
+
+odds <- merge(success_counts, failure_counts, by = "CAR_AGE", all = TRUE)
+
+odds$EVENT.x[is.na(odds$EVENT.x)] <- 0  
+odds$EVENT.y[is.na(odds$EVENT.y)] <- 0
+odds$ODDS <- with(odds, ifelse(EVENT.y == 0, 0, EVENT.x / EVENT.y))
+
+names(odds)[names(odds) == "EVENT.x"] <- "SUCCESSES"
+names(odds)[names(odds) == "EVENT.y"] <- "FAILS"
+
+# Plot Line Chart
+ggplot(odds, aes(x = CAR_AGE, y = ODDS)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "CAR_AGE Unique Values", y = "Odds", title = "Odds of CAR_AGE by Unique Values")
+
+
+# MVR_PTS ---
+uniq_vals <- unique(claims2$MVR_PTS)
+uniq_vals <- sort(uniq_vals)
+
+# Odds = # of Success Events / # of Fail Events
+success_counts <- aggregate(EVENT ~ MVR_PTS, data = claims2[claims2$EVENT == 1, ], FUN = length)
+failure_counts <- aggregate(EVENT ~ MVR_PTS, data = claims2[claims2$EVENT == 0, ], FUN = length)
+
+odds <- success_counts
+odds$FAILS <- failure_counts$EVENT
+odds$ODDS <- odds$EVENT / odds$FAILS
+
+# Plot Line Chart
+ggplot(odds, aes(x = MVR_PTS, y = ODDS)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "MVR_PTS Unique Values", y = "Odds", title = "Odds of MVR_PTS by Unique Values")
+
+
+# TIF ---
+uniq_vals <- unique(claims2$TIF)
+uniq_vals <- sort(uniq_vals)
+
+# Odds = # of Success Events / # of Fail Events
+success_counts <- aggregate(EVENT ~ TIF, data = claims2[claims2$EVENT == 1, ], FUN = length)
+failure_counts <- aggregate(EVENT ~ TIF, data = claims2[claims2$EVENT == 0, ], FUN = length)
+
+odds <- success_counts
+odds[20:23,'TIF'] <- c(19,20,22,25)
+odds[20:23,'EVENT'] <- 0
+odds <- arrange(odds, TIF)
+odds$FAILS <- failure_counts$EVENT
+odds$ODDS <- odds$EVENT / odds$FAILS
+
+# Plot Line Chart
+ggplot(odds, aes(x = TIF, y = ODDS)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "TIF Unique Values", y = "Odds", title = "Odds of TIF by Unique Values")
+
+
+# TRAVTIME ---
+uniq_vals <- unique(claims2$TRAVTIME)
+uniq_vals <- sort(uniq_vals)
+
+# Odds = # of Success Events / # of Fail Events
+success_counts <- aggregate(EVENT ~ TRAVTIME, data = claims2[claims2$EVENT == 1, ], FUN = length)
+failure_counts <- aggregate(EVENT ~ TRAVTIME, data = claims2[claims2$EVENT == 0, ], FUN = length)
+
+odds <- merge(success_counts, failure_counts, by = "TRAVTIME", all = TRUE)
+
+odds$EVENT.x[is.na(odds$EVENT.x)] <- 0  
+odds$EVENT.y[is.na(odds$EVENT.y)] <- 0
+odds$ODDS <- with(odds, ifelse(EVENT.y == 0, 0, EVENT.x / EVENT.y))
+
+names(odds)[names(odds) == "EVENT.x"] <- "SUCCESSES"
+names(odds)[names(odds) == "EVENT.y"] <- "FAILS"
+
+
+# Plot Line Chart
+ggplot(odds, aes(x = TRAVTIME, y = ODDS)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "TRAVTIME Unique Values", y = "Odds", title = "Odds of TRAVTIME by Unique Values")
+
+```
+
+#### B.	(20 points) Enter the predictors into your model using Forward Selection.  The Entry Threshold is 0.05. Please provide a detailed report of the Forward Selection. However, you do not need to show steps such as in the previous question.  The report should include (1) the predictor entered, (2) the log-likelihood value, (3) the Deviance Chi-squares statistic, (4) the Deviance Degree of Freedom, and (5) the Chi-square significance. 
+```{r}
+# Initialize empty model with just intercept
+empty_model <- glm(EVENT ~ 1, data = claims2, family="binomial")
+full_model <- glm(EVENT ~ URBANICITY + MVR_PTS + CAR_AGE + MSTATUS + CAR_TYPE + REVOKED + TRAVTIME + TIF, data = claims2, family = "binomial")
+
+# Forward Selection
+mod_step <- stepAIC(empty_model, 
+                         scope = list(lower = empty_model, upper = full_model), 
+                         direction = "forward", 
+                         trace = FALSE)
+
+summary(mod_step)
+
+# Iteration 1
+imod1 <- glm(EVENT ~ URBANICITY, data = claims2, family = "binomial")
+# logLik_value <- logLik(imod1)
+# print(logLik_value)
+# anova(empty_model, imod1, test = "Chisq")
+
+# Iteration 2
+imod2 <- glm(EVENT ~ URBANICITY + MVR_PTS, data = claims2, family = "binomial")
+# logLik_value <- logLik(imod2)
+# print(logLik_value)
+# anova(imod1, imod2, test = "Chisq")
+
+# Iteration 3
+imod3 <- glm(EVENT ~ URBANICITY + MVR_PTS + CAR_AGE, data = claims2, family = "binomial")
+# logLik_value <- logLik(imod3)
+# print(logLik_value)
+# anova(imod2, imod3, test = "Chisq")
+
+# Iteration 4
+imod4 <- glm(EVENT ~ URBANICITY + MVR_PTS + CAR_AGE + MSTATUS, data = claims2, family = "binomial")
+# logLik_value <- logLik(imod4)
+# print(logLik_value)
+# anova(imod3, imod4, test = "Chisq")
+
+# Iteration 5
+imod5 <- glm(EVENT ~ URBANICITY + MVR_PTS + CAR_AGE + MSTATUS + CAR_TYPE, data = claims2, family = "binomial")
+# logLik(imod5)
+# anova(imod4, imod5, test = "Chisq")
+
+# Iteration 6
+imod6 <- glm(EVENT ~ URBANICITY + MVR_PTS + CAR_AGE + MSTATUS + CAR_TYPE + REVOKED, data = claims2, family = "binomial")
+# logLik(imod6)
+# anova(imod5, imod6, test = "Chisq")
+
+# Iteration 7
+imod7 <- glm(EVENT ~ URBANICITY + MVR_PTS + CAR_AGE + MSTATUS + CAR_TYPE + REVOKED + TRAVTIME, data = claims2, family = "binomial")
+# logLik(imod7)
+# anova(imod6, imod7, test = "Chisq")
+
+# Iteration 8
+imod8 <- glm(EVENT ~ URBANICITY + MVR_PTS + CAR_AGE + MSTATUS + CAR_TYPE + REVOKED + TRAVTIME + TIF, data = claims2, family = "binomial")
+# logLik(imod8)
+# anova(imod7, imod8, test = "Chisq")
+
+```
+
+             'log Lik.'   Deviance   Dev Df   Chi-sq sig
++ URBANICITY -5124.89     578.16     1        < 2.2e-16 ***
++ MVR_PTS    -4969.266    311.25     1        < 2.2e-16 ***
++ CAR_AGE    -4884.77     168.99     1        < 2.2e-16 ***
++ MSTATUS    -4811.459    146.62     1        < 2.2e-16 ***
++ CAR_TYPE   -4738.29     146.34     5        < 2.2e-16 ***
++ REVOKED    -4673.498    129.59     1        < 2.2e-16 ***
++ TRAVTIME   -4632.904    81.188     1        < 2.2e-16 ***
++ TIF        -4604.172    57.463     1        3.444e-14 ***
+
+
+#### C.	(10 points).  Which predictors does your final model contain?
+The final model contains all 8 predictors: MSTATUS, CAR_TYPE, REVOKED, URBANICITY, CAR_AGE, MVR_PTS, TIF, and TRAVTIME.
+
+#### D.	(10 points).  Please show a table of the complete set of parameters of your final model. Please also include the exponentiated estimates (i.e., apply the exp() function on the parameter estimates).
+Coefficients:
+                               Estimate Std. Error z value Pr(>|z|)       Exp(Estimate)
+(Intercept)                   -3.304583   0.141582 -23.340  < 2e-16 ***   0.03671451
+URBANICITYHighly Urban/ Urban  2.079243   0.104049  19.983  < 2e-16 ***   7.99840835
+MVR_PTS                        0.163794   0.011133  14.712  < 2e-16 ***   1.17797132
+CAR_AGE                       -0.058881   0.004669 -12.610  < 2e-16 ***   0.94281929
+MSTATUSYes                    -0.636946   0.052083 -12.229  < 2e-16 ***   0.52890519
+CAR_TYPEPanel Truck            0.553739   0.104735   5.287 1.24e-07 ***   1.73974556
+CAR_TYPEPickup                 0.732984   0.082066   8.932  < 2e-16 ***   2.08128232
+CAR_TYPESports Car             0.948175   0.091057  10.413  < 2e-16 ***   2.58099569
+CAR_TYPESUV                    0.643630   0.074023   8.695  < 2e-16 ***   1.90337804
+CAR_TYPEVan                    0.479323   0.102470   4.678 2.90e-06 ***   1.61498064
+REVOKEDYes                     0.783806   0.069734  11.240  < 2e-16 ***   2.18979016
+TRAVTIME                       0.014944   0.001674   8.928  < 2e-16 ***   1.01505648
+TIF                           -0.048859   0.006560  -7.448 9.49e-14 ***   0.95231525
+```{r}
+# exp(mod_step$coefficients)
+
+```
+
+### 2. You will visually assess your final model in Question 1.  Please color-code the markers according to the Exposure value.  Also, please briefly comment on the graphs.
+
+#### A.	(10 points).  Please plot the predicted Event probability versus the observed Frequency.
+The graph shows that for the model did not accurately predict when an individual would file at least one claim per exposure. For those observed with 0 or very low frequency, the model still predicted an event close to 0.95 probability. The exposure coloring indicates that those with high exposure had lower observed frequency, and the graph confirms that Exposure would not have been a good predictor for our response given that a range of exposures were present at each predicted even probability.
+```{r}
+#Predicted Probability
+predictions <- predict(mod_step, type="response")
+claims2$PRED <- predictions
+
+ggplot(claims2, aes(x = FREQUENCY, y = PRED, color = EXPOSURE)) +
+  geom_point() +
+  labs(x = "Observed Frequency", y = "Predicted Event Probability", title = "Predicted Event Probability vs Observed Frequency")
+
+```
+
+#### B.	(10 points).  Please plot the Deviance residuals versus the observed Frequency.
+We observe that all of the observations with observed frequencies greater than 0 were underestimated, and not surprisingly all of the observed frequencies that were 0 were overestimated in our prediction. The wide range of from about -2 to +3 also indicates that our model had significant differences between the probabilies estimated and the observed proportions of success.
+```{r}
+# Deviance Residuals
+d <- residuals(mod_step)
+claims2$DEVRESID <- d
+
+ggplot(claims2, aes(x = FREQUENCY, y = DEVRESID, color = EXPOSURE)) +
+  geom_point() +
+  labs(x = "Observed Frequency", y = "Deviance Residuals", title = "Deviance Resiudals vs Observed Frequency")
+
+
+```
+
+### 3. (15 Points) You will calculate the Accuracy metric to assess your final model in Question 3. 
+If the predicted Event probability of an observation is greater than or equal to 0.25, then you will classify that observation as the Event (i.e., filing more than one claim per unit exposure).  An observation is correctly classified if the predicted target value equals the observed target value.  The Accuracy metric is the proportion of observations that are correctly classified.
+```{r}
+# Assign Predictions Class
+predclass <- ifelse(predictions >= 0.25, 1, 0)
+
+# Compare
+obsclass <- claims2$EVENT
+
+correct <- predclass == obsclass
+accuracy <- sum(correct) / length(correct)
+
+print(accuracy)
+
+```
+
