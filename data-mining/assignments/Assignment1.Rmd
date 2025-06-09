@@ -1,0 +1,293 @@
+---
+title: "Assignment1"
+author: "Natalie Kim, Danae Vassiliadis, Alex Foster, Mat Spencer"
+date: "2024-01-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### Load Data
+```{r}
+#install.packages("caret")
+library(caret)
+data("GermanCredit")
+
+```
+
+#### Predictor Exploration
+```{r}
+str(GermanCredit)
+```
+
+```{r}
+head(GermanCredit)
+```
+```{r}
+summary(GermanCredit)
+```
+
+##### Subset of data without 'Class' variable
+```{r}
+dat <- subset(GermanCredit, select = -c(Class))
+```
+
+
+##### Feature Selection
+```{r}
+##Recurssive Feature Elimination
+library(randomForest)
+
+X <- GermanCredit[, -2]  
+y <- GermanCredit[, 2]
+
+#control parameters for rfe
+ctrl <- rfeControl(functions = rfFuncs, method = "cv", number = 5)
+num_features <- 20
+
+# rfe <- rfe(X, y, sizes = c(1:ncol(X)), rfeControl = ctrl, subsetSize = num_features)
+# print(rfe)
+# plot(rfe)
+
+#Duration, InstallmentRatePercentage, Purpose.UsedCar, Job.Management.SelfEmp.HighlyQualified, Telephone top 5 variables top 5 variables 
+
+
+ggplot(GermanCredit, aes(x = Duration)) +
+  geom_histogram(binwidth = 10, fill = "skyblue", color = "black") +
+  labs(title = "Histogram of Duration", x = "Duration", y = "Frequency")
+
+ggplot(GermanCredit, aes(x = InstallmentRatePercentage)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(title = "Histogram of InstallmentRatePercentage", x = "InstallmentRatePercentage", y = "Frequency")
+
+selected_data<- new_df <- GermanCredit[, c("Amount", "Duration", "Age", "InstallmentRatePercentage", "Purpose.UsedCar", "Purpose.NewCar", "Purpose.Furniture.Equipment", "Purpose.Radio.Television", "Purpose.DomesticAppliance", "Purpose.Repairs", "Purpose.Education", "Purpose.Retraining", "Purpose.Business", "Job.Management.SelfEmp.HighlyQualified", "Job.UnemployedUnskilled", "Job.UnskilledResident", "Housing.Rent", "Housing.Own", "Telephone", "Property.RealEstate", "Property.Insurance", "Property.CarOther")]
+#"Job.SkilledEmployee", "Housing.ForFree" removed due to singularities 
+
+
+```
+
+
+#### Build linear model to predict Amount
+``` {r}
+selected_data$InstallmentRatePercentage<- as.factor(selected_data$InstallmentRatePercentage)
+str(selected_data)
+# Linear model with reduced variables as independent
+lm1 <- lm(Amount ~ ., data = selected_data)
+summary(lm1)
+
+```
+
+#### Repeat the following steps 1000 times
+1. Split sample into train and test using 632:368 ratio
+2. Create linear model using train data with Amount as the dependent variable and the same independent variables you selected before. Predict results with holdout data
+3. Save Coefficients, R squared in training, and R squared of holdout predictions. R squared in training comes directly from linear model object. R squared in holdout should be calculated as:
+cor(Test.Data$Amount, predict(linmod, newdata = Test.Data))^2
+```{r}
+# Initialize table to save Coefficients, Training R squared, Predictions R Squared
+results <- data.frame(matrix(NA, nrow = 1000, ncol = 26))
+column_names <- c(names(lm1$coefficients), 'Training R2', 'Predictions R2')
+colnames(results) <- column_names
+
+reps <- 1000
+
+for (i in 1:reps) {
+  # Set seed for reproducibility
+  set.seed(i)
+  
+  # Create a train/test split
+  index <- createDataPartition(selected_data$Amount, p = 0.632, list = FALSE)
+  
+  # Create training set
+  train_data <- selected_data[index, ]
+  # Create testing set
+  test_data <- selected_data[-index, ]
+  
+  # Create linear model from train data
+  linmod <- lm(Amount ~ ., data = train_data)
+
+  # Store Results
+  results[i,1:24] <- coef(linmod)
+  results[i,25] <- summary(linmod)$r.squared
+  results[i,26] <- cor(test_data$Amount, predict(linmod, newdata = test_data))^2
+}
+
+
+View(results)
+
+```
+
+#### Pick 3 variables and plot the distribution of its coefficients. Each column in matrix we created above is the different coefficients for a specific variable. Show the name of the coefficient in the plot. Histogram.
+Variables Chosen: Duration, Telephone, InstallmentRatePercentage
+
+```{r}
+# Distribution of 'Duration'
+hist(results$Duration, main = 'Distribution of Duration Variable')
+
+# Distribution of 'Age'
+hist(results$Age, main = 'Distribution of Age Variable')
+
+# Distribution of 'InstallmentRatePercentage2'
+hist(results$InstallmentRatePercentage2, main = 'Distributiong of Installment Rate Percentage 2 Variable')
+
+```
+
+#### Plot distribution of R squared in train.
+```{r}
+hist(results$`Training R2`, main = 'Distribution of R squared in Training Data')
+
+```
+
+```{r}
+R2_perc_dec <- (results$`Predictions R2`- results$`Training R2` )/results$`Training R2`
+
+results <- cbind(results,R2_perc_dec)
+  
+mean(R2_perc_dec)
+hist(R2_perc_dec, main = 'Distribution of the Percentage Decrease of R squared from Train to Holdout')
+print(results[,25:27])
+
+```
+#### Calculate percentage decrease of R square from train to holdout.
+
+##### Interpret the results of the above plots?
+We see in the rsquared distribution of the training data that normally distributed approximately around 0.585 which is what our rsquared of our intinal linear model showed. This means that the model explains 58.5% of the variation of our training data. 
+
+Additionally we see that the distribution of the percent decrease of rsquared from train to holdout is normally disritibuted around -0.06. This means we lose 6% explainability of our testing data when applying the same model.
+
+##### How would we hope/expect them to look? 
+We want our residual to follow normal distribution in order to support the assumption that our variables are independently and identically distributed. Which we can also see in our individual plot distributions of the 3 variables we have chose above. 
+
+##### Does this indicate a good result? What do these plots say about what we usually expect the R squared to be and how much R squared we usually expect to lose from Train to holdout?
+
+This does not necessarily indicate a good result. Had we seen a more substantial fall-off in R-Squared from training to test, we would be able to clearly say that our model was overfit to the training data and did not generalize well to new information.
+
+
+
+#### Calculate the mean of each coefficient.
+```{r}
+coeff_means <- sapply(results[,1:24], mean)
+print(coeff_means)
+```
+
+#### Calculate the standard deviation of each coefficient.
+```{r}
+coeff_sd <- sapply(results[,1:24], sd)
+print(coeff_sd)
+
+```
+
+#### Compare the means of the 1000 coefficients to the coefficients from the model created in step 2 created using the entire sample. Show the percentage difference
+```{r}
+# Original step 2 coefficients
+coeff_full <- coef(lm1)
+
+print(coeff_full)
+
+# Percent Difference Calculation
+perc_diff <- (coeff_means-coeff_full)/coeff_full * 100
+
+print(sort(perc_diff))
+
+# Comparing positive vs negative percent differences
+
+```
+
+## Confidence Intervals
+#### Order the coefficients from least to greatest and look between value 25 and 975
+```{r}
+# Sort coefficients from least to greatest
+sorted_coeff <- order(coeff_means)
+print(sort(coeff_means))
+# Initialize matrix with coefficients sorted from least to greatest
+rep_CI <- matrix(nrow = 24, ncol = 2)
+colnames(rep_CI) <- c("2.5%", "97.5%")
+rownames(rep_CI) <- names(sort(coeff_means))
+  
+# Values 2.5% to 97.5% -> 95% CI
+confidence_level <- 0.95
+
+# rep_CI index
+j <- 1
+
+# Compute Confidence Intervals
+for (i in sorted_coeff) {
+  # Standard Error of the Mean
+  se <- coeff_sd[i] / sqrt(length(train_data))
+  
+  # Margin of Error
+  margin_of_error <- qt((1 + confidence_level) / 2, df = length(train_data) - 1) * se
+    # qt = quantile function
+  
+  # Calculate lower bound
+  rep_CI[j,1] <- coeff_means[i] - margin_of_error
+  
+  # Calculate upper bound
+  rep_CI[j,2] <- coeff_means[i] + margin_of_error
+
+  # increment matrix index
+  j <- j + 1
+}
+
+```
+
+#### Using method of choice, calculate CI for each coefficient from the repeated sample model.
+```{r}
+# Calculate the widths of the CI 
+rep_CI_widths <- (rep_CI[,2] - rep_CI[,1])*sqrt(.632)
+print(rep_CI_widths)
+
+```
+
+#### Calculate CI for full model using confint function
+The first column of the output will be the lower bound for the confidence intervals and the second column of the output will be the upper bounds. Calculate width as Upper.bound - lower.bound.
+```{r}
+full_CI <- confint(lm1)
+# print(full_CI)
+full_CI_widths <- full_CI[,2] - full_CI[,1]
+print(full_CI_widths)
+```
+
+#### Calculate how many of the repeated sample CI’s are tighter or broader than the full model CI’s.
+If the width is smaller, the CI is tighter. If the width is bigger, the CI is broader.
+```{r}
+# Repeated CI's that are tighter than full CI's
+tighter <- sum(rep_CI_widths < full_CI_widths)
+
+# Repeated CI's that are wider than full CI's
+wider <- 24 - tighter
+
+print(c(tighter, wider))
+
+CI_results<- cbind(rep_CI[,1:2], rep_CI_widths, full_CI[,1:2], full_CI_widths)
+
+print(CI_results)
+
+```
+
+#### Interpret results.
+##### How did the means compare?
+The difference in the means of the coefficients between the full and repeated model varied. The repeated models mean coefficients varied from 6% less than the full model to about 4% higher than the full model for some given means of coefficients.
+
+##### How about the confidence intervals, how many were tighter or broader?
+20 of the repeated CI's were found to be tighter than the full model. only 4 of the confidence intervals were broader than the full model.
+
+##### What does this say about each method? 
+As the width of the CI provides information about the precision of the estimate, we can see that the average of the 1000 CI's suggests that not only that the range of plausible values is narrower, but also that the there is higher precision and thus can provide a more plausible estimate. 
+Therefore repeating the model 1000 times provided us a more precise estimate and lowers our uncertainty around the estimate. We should maintain caution when using this method however, as this can lead to overfitting. 
+
+##### What if we tried doing 10,000 samples?
+This would likely narrow our confidence interval even more, providing even more precision in estimating our coefficients. This would be more representative of the data set as a whole and would likely decrease the percent difference in the rquared of the testing vs training.
+
+
+
+
+
+
+
+
+
+
+
+

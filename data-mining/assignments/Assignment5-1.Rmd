@@ -1,0 +1,218 @@
+---
+title: "Assignment 5 - Part 1"
+author: "Natalie Kim, Danae Vassiliadis, Alex Foster, Mat Spencer"
+date: "2024-02-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 1
+### Step 1: Use training and test data
+
+1. Split the GermanCredit data into the same Test and Training samples from Assignment 1
+2. Load Anil's 'clusterreg' and 'clustreg.predict' functions
+3. Standardize your variables
+
+```{r}
+# Load Data
+library(caret)
+data("GermanCredit")
+```
+
+```{r}
+# Training and Test Split from Assignment 1
+# Set seed for reproducibility
+set.seed(123)
+  
+# Create a train/test split
+index <- createDataPartition(GermanCredit$Amount, p = 0.632, list = FALSE)
+  
+# Create training set
+train_data <- GermanCredit[index, ]
+# Create testing set
+test_data <- GermanCredit[-index, ]
+```
+
+```{r}
+# 'clusterreg' function
+clustreg=function(dat,k,tries,sed,niter)
+{
+
+set.seed(sed)
+dat=as.data.frame(dat)
+rsq=rep(NA,niter)
+res=list()
+rsq.best=0
+    for(l in 1:tries) 
+    {
+
+	c = sample(1:k,nrow(dat),replace=TRUE)
+	yhat=rep(NA,nrow(dat))
+	for(i in 1:niter) 
+	{		
+		resid=pred=matrix(0,nrow(dat),k)
+		for(j in 1:k)
+		{	
+			pred[,j]=predict(glm(dat[c==j,],family="gaussian"),newdata=dat)		
+			resid[,j] = (pred[,j]-dat[,1])^2
+		}
+
+	c = apply(resid,1,which.min)
+	for(m in 1:nrow(dat)) {yhat[m]=pred[m,c[m]]}
+	rsq[i] = cor(dat[,1],yhat)^2	
+	}
+	
+	if(rsq[niter] > rsq.best) 
+		{	
+		rsq.best=rsq[niter]
+		l.best=l
+            	c.best=c
+		yhat.best=yhat
+		}
+    }
+
+    res=list("Complete")
+    for(i in k:1) {res=list(summary(lm(dat[c.best==i,])),res)}
+	
+    return(list(data=dat,nclust=k,tries=tries,seed=sed,rsq.best=rsq.best,number.loops=niter, Best.try=l.best,cluster=c.best,results=res))
+}
+```
+
+```{r}
+# 'clustreg.predict' function
+clustreg.predict=function(results,newdat){
+
+	yhat=rep(NA,nrow(newdat))
+	resid=pred=matrix(0,nrow(newdat),length(table(results$cluster)))
+		
+		for(j in 1:length(table(results$cluster))){			
+			pred[,j]=predict(glm(results$data[results$cluster==j,],family="gaussian"),newdata=newdat)		
+			resid[,j] = (pred[,j]-newdat[,1])^2
+		}
+
+	c = apply(resid,1,which.min)
+	for(m in 1:nrow(newdat)) {yhat[m]=pred[m,c[m]]}
+	rsq = cor(newdat[,1],yhat)^2	
+
+return(list(results=results,newdata=newdat,cluster=c,yhat=yhat,rsq=rsq))
+
+}
+```
+
+```{r}
+# Standardize the Variables
+Train[,c(1,3:7)] <- scale(Train[,c(1,3:7)])
+Test[,c(1,3:7)] <- scale(Test[,c(1,3:7)])
+```
+
+
+### Step 2: Build Cluster-wise Regression Model
+Using train data, choose "Amount" as the dependent variable. Build 1, 2, and 3 cluster solutions.
+
+1. Use 6 numeric variables other than "amount" as independent variables. If you use caret package data, this will be columns 1 and 3 through 7.
+2. Align your data frame for training and holdout so that "amount" is the first column and the other 6 numeric variables are stored in the other columns
+3. Perform cluster-wise regression for 1, 2, and 3 clusters. Arguments for clustreg formula are: dat, k, tries, seed, niter
+4. Plot R^2 as a function of the number of clusters
+
+```{r}
+# Subset "Amount" and 6 numeric variables
+Train <- Train[,c(2,1,3:7)]
+Test <- Test[,c(2,1,3:7)]
+```
+
+```{r}
+library(flexmix)
+
+# Cluster-wise regression for clusters 1 through 3
+clustreg.german.1 = clustreg(Train,1,1,123,1)
+clustreg.german.2 = clustreg(Train,2,2,123,10)
+clustreg.german.3 = clustreg(Train,3,2,123,10)
+```
+
+```{r}
+# Plot R^2 as a function
+cluster.rsq.results = data.frame(
+  cluster = c(1, 2, 3),
+  R.2 = c(clustreg.german.1$rsq.best, clustreg.german.2$rsq.best, clustreg.german.3$rsq.best)
+)
+
+require(ggplot2)
+ggplot(cluster.rsq.results, aes(x = cluster, y = R.2)) +
+  geom_line() + 
+  labs(title = "Function of R^2 vs Cluster", x = "Number of Clusters", y = "R^2")
+
+```
+
+### Step 3: Test Validation
+Perform test validation testing of the cluster-wise regressions using function clustreg.predict().
+
+- Using the 3 models built with 1, 2, and 3 clusters respectively, predict classes for the holdout set.
+```{r}
+# Predict classes for 1 cluster
+amount.1 = clustreg.predict(clustreg.german.1, Test)
+
+# Predict classes for 2 clusters
+amount.2 = clustreg.predict(clustreg.german.2, Test)
+
+# Predict classes for 3 clusters
+amount.3 = clustreg.predict(clustreg.german.3, Test)
+
+# c(amount.1$rsq, amount.2$rsq, amount.3$rsq)
+```
+
+### Step 4: Choose the best model
+Based on the best regression interpretation on Training Data, R^2 and related significance, and the best test performance.
+
+Show a table of
+
+- training R^2
+- holdout R^2
+- percentage decrease from train to holdout R^2
+
+```{r}
+results = data.frame(
+  trainingR.2 = c(clustreg.german.1$rsq.best, clustreg.german.2$rsq.best, clustreg.german.3$rsq.best),
+  holdoutR.2 = c(amount.1$rsq, amount.2$rsq, amount.3$rsq),
+  perc.dec = c(0,0,0)
+)
+
+results$perc.dec = (results$trainingR.2 - results$holdoutR.2) / results$trainingR.2
+
+print(results)
+```
+
+##### Which model is the most stable? 
+The two cluster model is the most stable given that it has the smallest percent decrease between the training and the holdout R^2.
+
+##### Which performs the best on the holdout set? 
+The three cluster model performs the best on the holdout set.
+
+##### Which one would you choose as the final model?
+Based on the R^2, we would choose the model with 3 clusters. It performs the best for both the training and holdout data. Though less consistent than the 2 cluster model, it is still relatively stable across the two data sets.
+
+### Step 5: Summarize Results (Training & Test)
+
+##### From the training plot of R squared, which solution seems the best?
+Based on the training plot of R squared, the best solution appears to be the three cluster model since it has the greatest R^2.
+
+##### How did each solution perform in holdout?
+Each model performed similar to its performance on the training data. The three cluster model performed the best with an R^2 of 85.3%, followed by the two cluster model with a R^2 of 81.4%, and finally the model with one cluster that had an R^2 of 51.7%. 
+
+```{r}
+# 3 Cluster Results
+clustreg.german.3$results
+```
+##### Are you able to interpret the results by reading the regression coefficients?
+Yes, using the coefficients' signs, magnitudes, and statistical significance we can are able to interpret the relationships between the predictors and the response variables as well as the predictors relationships across the different clusters.
+
+
+##### Can you tell what types of clusters have been formed?
+The three types of clusters that we identified are as follows:
+
+1. Cluster 1: Older individuals that take out larger and long-term loans, but who borrow less if the installment rate is high or they have more dependents.
+2. Cluster 2: Represents the youngest individuals who take out the smallest or shortest duration loans. Individuals in this cluster tend to take out greater loans the longer they live in their place of residence and take on greater loans the more credits they have.
+3. Cluster 3: Middle aged individuals who take out loans of mid-sized length and are also sensitive to higher installment rates. Those in this that tend to live longer in their places of residence or have larger number of credits, tend to take out smaller loans. 
+

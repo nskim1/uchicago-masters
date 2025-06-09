@@ -1,0 +1,126 @@
+## Data Mining Homework 3 (part 1)
+
+#### Due: 2024-02-04
+
+#### Students: Alex Foster, Danae Vassiliadis, Mathew Spencer, Natalie Kim
+
+## Part 1: Latent Class Analysis on German Credit Data with poLCA
+
+Load necessary libraries:
+
+```{r}
+library(readr)
+library(caret)
+library(ggplot2)
+library(poLCA)
+library(dplyr)
+
+```
+
+Import necessary data and format columns:
+
+```{r}
+GermanCredit <- read.table("http://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data", 
+                           stringsAsFactors = TRUE)
+colnames(GermanCredit) <- c("CheckingAccountStatus", "Duration", "CreditHistory", 
+                            "Purpose", "Amount",  "SavingsAccountBonds", 
+                            "EmploymentDuration", "InstallmentRatePercentage",  
+                            "Personal",  "OtherDebtorsGuarantors", "ResidenceDuration", 
+                            "Property",  "Age",  "OtherInstallmentPlans", "Housing", 
+                            "NumberExistingCredits", "Job", "NumberPeopleMaintenance", 
+                            "Telephone", "ForeignWorker", "Class")
+```
+
+**Step 1: Perform LCA of categorical variables for market segmentation**
+
+```{r}
+# plot all the variables
+# for (col in names(GermanCredit)) {
+#   plot(GermanCredit[[col]], main = col, xlab = col, col = "lightblue", border = "black")
+# }
+
+# we'll focus on variables with 3 levels
+selected_columns <- sapply(GermanCredit, function(col) {
+  is.factor(col) && nlevels(col) >= 3 && nlevels(col) <= 5
+})
+selected_data <- GermanCredit[, selected_columns]
+
+# get those variables ready for ingestion by poLCA
+f <- cbind(CreditHistory, EmploymentDuration, Personal, Property, Job)~1
+
+```
+Note: We decided to focus on variables with a similar number of levels to improve the algorithm's performance - specifically, we targeted variables with between 3 and 5 levels (inclusive). We also decided to eliminate from consideration columns that contained a high proportion (80%+) of zero values.
+
+
+**Step 2: Split the data into train and test (70-30)**
+
+```{r}
+set.seed(123)
+
+training_indices <- sample(1:nrow(selected_data), 0.7 * nrow(selected_data))
+training_set <- selected_data[training_indices,]
+testing_set <- selected_data[-training_indices,]
+
+
+# build a for loop to fit training set with k = 2:6 (save AIC, BIC each time)
+aic_values <- numeric()
+bic_values <- numeric()
+k_values <- 2:6
+
+for(k in k_values){
+  lca_model <- poLCA(formula=f, data=training_set, nclass=k, nrep=10, maxiter=1000, 
+                     graphs=FALSE, verbose=FALSE) # fit poLCA model to training data
+  aic_values <- c(aic_values, lca_model$aic) # save AIC metric
+  bic_values <- c(bic_values, lca_model$bic) # save BIC metric
+}
+
+# store model metrics in a data frame
+results_df <- data.frame(K = k_values, AIC = aic_values, BIC = bic_values)
+
+# create a scree plot that shows AIC and BIC for different values of K
+ggplot(results_df, aes(x = K)) +
+  geom_line(aes(y = AIC, color = "AIC"), linewidth = 1.2) +
+  geom_line(aes(y = BIC, color = "BIC"), linewidth = 1.2) +
+  labs(title = "Scree Plot of AIC and BIC",
+       x = "Number of Latent Classes (K)",
+       y = "AIC & BIC") +
+  theme_minimal()
+```
+
+Selection: The scree plot shows kinks at K=3 and K=4. We'll go with K=3 for interpretability purposes - having more classes generally diminishes the describability of each class. Also, we would point out that there appear to be diminishing returns for K values beyond 3 (the rate of decrease in AIC flattens out quickly).
+
+**Step 3: Perform a test validation of LCA for K=3**
+
+```{r}
+k_value = 3
+# re-run LCA model with K=3 on the training set and save the conditional probability 
+lca_train <- poLCA(formula=f, data=training_set, nclass=k_value, nrep=10, maxiter=1000, graphs=TRUE)
+
+# build a new LCA model with the test set, appropriate K value, and the probability from above^ as initial probability 
+lca_test <- poLCA(formula=f, data=testing_set, nclass=k_value, nrep=10, maxiter=1000, 
+                   graphs=TRUE, probs.start=lca_train$probs)
+
+
+# create a data frame to compare train and test results
+prob_comparison <- data.frame(
+  Class = 1:k_value,
+  Train_Prob = lca_train$P,
+  Test_Prob = lca_test$P
+)
+
+print(prob_comparison)
+```
+
+Comment: We have 3 classes. From training to test, the population share of: 1) Class 1 increases from 51.2% to 53.2%; 2) Class 2 decreases from 43.4% to 14.2%; and 3) Class 3 increases from 5.4% to 32.6%. That's an average popshare change of 19.5 percentage points, which suggests our model is relatively unstable. This suggests our model is over-fit to the training data and does not generalize well to new data.
+
+**Step 4: Look at plots and name/describe each class.**
+
+Class 1 (51.2% of training data) is the "Career-Oriented Women" class. It generally represents applicants who: 1) pay back debt on time; 2) have been employed for a few years; 3) are divorced females; 4) own some real estate; and 5) are skilled workers.
+
+Class 2 (43.4% of training data) is the "Untapped Potential Males" class. It generally represents applicants who: 1) sometimes struggle to pay back debt; 2) have been employed a long time; 3) are single males; 4) don't own much property; 5) are skilled workers.
+
+Class 3 (5.4% of training data) is the "Deadbeat Males" class. It generally represents applicants who: 1) sometimes struggle to pay back debt; 2) are unemployed; 3) are single males; 4) don't own much property; 5) are unskilled.
+
+**Step 5: How hard was it to characterize these classes?**
+
+Having more classes and more attributes makes it harder to characterize the different classes. Identifying the traits that made each class from our model unique was difficult at first, but after some effort, we realized the "story" our model was telling. Had we not been asked to select a value of K based on our scree plot, we would have likely gone with K=2 for better interpretability and stability from train to test. For example, Class 2 and Class 3 probably could have been collapsed into one class.

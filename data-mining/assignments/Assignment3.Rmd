@@ -1,0 +1,231 @@
+---
+title: "Assignment3"
+author: "Natalie Kim"
+date: "2024-02-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Part I
+
+### Option 1
+Get the UCI version of dataset that comes with original categorical variables. Meanings of variables can be found on UCI. Make sure the categorical variables are read as factors (shown as <fct> in the dataframe). Otherwise, convert them to factors.
+```{r}
+GermanCredit <- read.table("http://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data", stringsAsFactors = TRUE)
+
+colnames(GermanCredit) <- c("CheckingAccountStatus", "Duration", "CreditHistory", "Purpose", "Amount",  "SavingsAccountBonds", "EmploymentDuration", "InstallmentRatePercentage",  "Personal",  "OtherDebtorsGuarantors", "ResidenceDuration", "Property",  "Age",  "OtherInstallmentPlans", "Housing", "NumberExistingCredits", "Job", "NumberPeopleMaintenance", "Telephone", "ForeignWorker", "Class")
+
+require(dplyr)
+# Convert InstallmentRatePercentage, ResidenceDuration, NumberExistingCredits, NumberPeopleMaintenance, Class to Factor
+GermanCredit <- GermanCredit %>%
+  mutate(across(c(InstallmentRatePercentage, ResidenceDuration, NumberExistingCredits, NumberPeopleMaintenance, Class), as.factor))
+
+str(GermanCredit)
+```
+
+
+### 1. Perform latent class analysis of only the categorical variables for market segmentation using (function poLCA in package poLCA).
+##### Remember: the local optima problem is big for all the clustering and latent class methods. The data for analysis should only include the variables that you think have business relevance for market segmentation.
+
+1. Consider the number of categorical levels of each variable. LCA will likely perform better if you select variables that have the same or similar numbers of levels. Make all columns you select factors.
+
+```{r}
+require(poLCA)
+# Selecting only Categorical Variables
+GermanCredit <- select(GermanCredit, -Age, -Duration, -Amount)
+
+# Remove Columns with 2 levels and 10 levels
+GermanCredit <- select(GermanCredit, -Purpose, -NumberPeopleMaintenance, -Telephone, -ForeignWorker)
+
+# Specify Formula
+form  <- cbind(CreditHistory,EmploymentDuration,Personal,Property,Job) ~ 1
+```
+
+### 2. Train-Test Split with random sampling.
+#### Determine 2, 3,..,K class/cluster solutions. Remember to run from multiple random starts. Use AIC criterion and interpretation based on graphs to interpret LCA solutions.
+
+1. Split data into train and test. 70:30 with random sampling.
+2. Build a “for loop” to fit the training set with k = 2:6 (or any range of k values you prefer). Save AIC and BIC at each iteration.
+3. When fitting the model, you can declare a formula first “f = cbind(col1.name,col2.name…)~1”, and then plug it in the poLCA function
+4. Remember to address the local minima issue by randomly initialize the model a few times. The “nrep” argument achieves this, such as “nrep = 50”.
+5. Based on the AIC / BIC you saved, make a scree plot (plot AIC and BIC against the number of clusters). Identify your chosen K using the elbow rule.
+  + Based on the Scree plot, we would select k = 3 clusters
+
+```{r}
+set.seed(456)
+
+# Training Set Indices
+train_indices <- sample(seq_len(nrow(GermanCredit)), size = 700, replace = FALSE)
+
+# Training and Test Split
+train <- GermanCredit[train_indices,]
+test <- GermanCredit[-train_indices,]
+
+results <- data.frame(k = integer(), AIC = numeric(), BIC=numeric())
+
+for (k in 2:6) {
+  # Fit LCA model with poLCA, assuming col1.name, col2.name, etc. are your variable names
+  lca_model <- poLCA(form, data = train, nclass = k, nrep = 50, verbose = FALSE)
+  
+  # Save AIC and BIC
+  results <- rbind(results, data.frame(k = k, AIC = lca_model$aic, BIC = lca_model$bic))
+}
+
+# library(ggplot2)
+ggplot(results, aes(x = k)) +
+  geom_line(aes(y = AIC, colour = "AIC")) +
+  geom_line(aes(y = BIC, colour = "BIC")) +
+  geom_point(aes(y = AIC, colour = "AIC")) +
+  geom_point(aes(y = BIC, colour = "BIC")) +
+  labs(title = "AIC and BIC vs. Number of Clusters", x = "Number of Clusters", y = "Information Criterion") +
+  theme_minimal() +
+  scale_colour_manual("", values = c(AIC = "blue", BIC = "red"))
+
+```
+
+
+### 3. Perform Test validation of LCA using your chosen K.
+#### For Test, use the centers class-conditional probabilities - probs - from training set as input to probs.start for test (generated from the training set LCA solution, as the starting point for the test. Use similarity of relative class sizes and test class conditional probabilities as measures of stability.
+
+1. Rerun your LCA model with the training set and your chosen K. Save the conditional probability
+2. Build a new LCA model with the test set, your chosen K, and the probability you just saved as the initial probability. For example, the test model should be "poLCA(f, German.Test.Data, ..., prob.start = LCA.train.object$probs....)
+3. Print class sizes and conditional probabilities of the train model and the test model. How similar are they? Would you consider the model stable?
+  + The class sizes are close, but still different. The thrid class sizes are similar, however, between the test and training data the the first to classes vary. The second is greater in the test data than the training.
+  + The conditional probabilities are similar, but there are only a few that standout as different. For example, A33 in class3 is 0.04993471 for the training data, but 0.13388607 for the test data.
+  + Given that there a little differences and overall the class size and the conditional probabilities are similar, the the model could be considered stable.
+
+```{r}
+k = 3
+
+# Rerun LCA model with chosen K
+results.1 <- poLCA(form, data = train, nclass = k, nrep=50, verbose=TRUE)
+
+# Save Conditional Probability
+train_cond_prob <- results.1$probs
+
+# LCA Model on Test Set
+results.2 <- poLCA(form, data = test, nclass = k, probs.start = train_cond_prob, verbose = TRUE, graphs = TRUE)
+
+# Class sizes and conditional probabilities
+class_sizes <- cbind(results.1$P, results.2$P)
+colnames(class_sizes) <- c("Train Class Sizes", "Test Class Sizes")
+print(class_sizes)
+
+cat("Training Model Conditional Probabilities for first variable:\n")
+print(results.1$probs[[1]])
+
+cat("Test Model Conditional Probabilities for first variable:\n")
+print(results.2$probs[[1]])
+
+```
+
+### 4. Look at the marginal distribution from the plot. Try to give a name to each of the classes.
+##### Make sure to describe the meaning or characteristics of each class, either by naming clusters or writing a short paragraph.
+
+### 5. Was naming the classes easy? What was the difficulty? State in a few sentences
+
+
+# Part 2
+
+### 1. Split samples into two random samples of sizes 70% and 30%.
+```{r}
+ames <- read.csv("/Users/xnxk040/Library/CloudStorage/OneDrive-W.WGrainger,inc/Desktop/data mining data/AmesHousing.csv")
+
+set.seed(123)
+
+
+
+# Training Set Indices
+train_i <- sample(seq_len(nrow(ames)), size = floor(0.7*nrow(ames)), replace = FALSE)
+
+# Training and Test Split
+train2 <- ames[train_i,]
+test2 <- ames[-train_i,]
+```
+
+
+### 2. Perform principal components of numeric variables from the Ames Housing Data on the training sample.
+
+1. Standardize your data so that each variable has mean = 0 and variance = 1
+2. Scale the test set using the mean and standard deviation of the training set. See "Assignment 2 Steps" for the code. This will help prevent information from “leaking” into the test set. Let’s be rigorous :)
+3. Perform PCA on the train data. Use princomp (R) and PCA (Python) function.
+```{r}
+# Train Data Standardization
+numericVars <- sapply(train2, is.numeric)
+train_numeric <- train2[, numericVars]
+
+# Standardize the train data
+ames_train_std <- scale(train_numeric)
+
+test_numeric <- test2[, numericVars]
+
+# Scale the test data using training set parameters
+# ames.train.mean = mean(ames_train_std, byColumns)
+# X.train.sd        = sd(X.train, byColumns)
+# X.train.scale  = scale(X.train, center=X.train.mean, scale=X.train.sd)
+# X.test.scale   = scale(X.test, center=X.train.mean, scale=X.train.sd) #scaling test by train parameters
+# 
+ames_test_std <- scale(test_numeric, center = attr(ames_train_std, "scaled:center"), scale = attr(ames_train_std, "scaled:scale"))
+
+# Remove NA rows
+ames_train_std <- na.omit(ames_train_std)
+ames_test_std <- na.omit(ames_test_std)
+
+# PCA
+Train.PCA <- princomp(ames_train_std, cor = TRUE)
+summary(Train.PCA)
+plot(Train.PCA)
+```
+
+### 3. Generate Scree Plots and select number of components you would retain.
+Display cumulative sum of variance accounted for by each additional PCA factor.  (VAF = cumsum(Train_PCA$sdev^2/sum(Train.PCA$sdev^2)))(R)
+Apply the "elbow rule" to decide how many components you'd like to include.
+```{r}
+# Cumulative sum of variance for each PCA factor
+VAF <- Train.PCA$sdev^2/sum(Train.PCA$sdev^2)
+cum_vaf <- cumsum(VAF)
+
+# Generate a scree plots - Cumulative and Individual
+plot(cum_vaf, xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained", type = 'b', main = "Scree Plot")
+
+
+plot(VAF,xlab = "Principal Component", ylab = "VAF", type = "b", main = "Scree Plot")
+```
+
+
+### 4. Show that Component loadings are orthogonal.
+If X is an orthogonal matrix, the t(X) %*% X is a diagonal matrix that has non-zero values on the diagonal and zeroes off the diagonal.
+```{r}
+round(t(Train.PCA$loadings) %*% Train.PCA$loadings[,1:4],2)
+
+```
+
+### Show that Component scores are orthogonal.
+```{r}
+scores <- Train.PCA$scores
+round(t(scores) %*% scores,2)
+```
+
+### Perform Test validation of Principal Components solution.
+
+```{r}
+# predict the component scores in the Test using the predict() function in R and transform function in Python
+test_scores <- predict(pca_result, newdata = ames_test_std)
+
+# matrix multiply the predicted component scores from (1) above with transpose of component loadings you derived from training data set from Step 2 above
+restored_features <- test_scores %*% t(pca_result$loadings)
+
+# Compute the Variance Account For (R2) in the Test sample
+R2 <- cor(as.vector(ames_test_std), as.vector(restored_features))^2
+
+print(R2)
+```
+
+
+```{r}
+
+
+```
