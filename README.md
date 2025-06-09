@@ -16,12 +16,6 @@ This repository contains coursework, projects, and assignments completed as part
   - Forecasted U.S. monthly job openings using ARIMA, exponential smoothing, NNAR, and RNNs.
 - **Models compared**: ETS, seasonal naive, regression with ARIMA errors, vector autoregressive models.
 
-### ⚙️ MLOps & Feature Stores
-- Built and tracked ML experiments using MLflow and LakeFS
-- Designed feature store using Feast and versioned datasets with LakeFS
-- Compared model performance across different feature and hyperparameter versions
-- Tools: MLflow, Feast, LakeFS, sklearn
-
 ### 🤖 Machine Learning
 - **Project**: Built a deep learning-based restaurant recommender system using Yelp data
 - **Techniques**: Compared content-based filtering (KNN) and collaborative filter (SVD), selecting SVD with Ridge Regularization
