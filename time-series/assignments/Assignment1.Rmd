@@ -1,0 +1,87 @@
+---
+title: "Assignment1"
+author: "Natalie Kim"
+date: "2024-06-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE,include=FALSE}
+# Libraries
+library(tseries)
+library(fpp)
+library(ggplot2)
+library(forecast)
+```
+
+## Question 5
+```{r,echo = FALSE}
+set.seed(20)
+rv <- rnorm(n = 10, mean = 2.3, sd = 1.2)
+
+# sample mean
+mean(rv)
+
+# sample size 10,000
+rv2 <- rnorm(n=10000, mean = 2.3, sd = 1.2)
+mean(rv2)
+```
+Using set.seed(20), the sample mean of the white noise of size 10 was 2.6316. Conversely, the sample mean of the white noise set of 10,000 was 2.29. This is clearly much closer to the desired mean of 2.3. The sample mean of the smaller size is not satisfactory compared to the larger set. With a smaller sample, there is less precision, and it is not a good representation of the desired population parameters.
+
+## Question 6
+### Part A:
+AirPassengers’ class reports the monthly totals of international airline passengers from 1949 to 1960 on the Pan Am airline. ‘JohnsonJohnson’ class reports the quarterly earnings of the Johnson & Johnson company from 1960 to 1980.
+```{r, echo = FALSE}
+# AirPassengers
+data(AirPassengers)
+AP <- AirPassengers
+
+# JohnsonJohnson
+data(JohnsonJohnson)
+JJ <- JohnsonJohnson
+```
+
+### Part B:
+```{r, echo = FALSE}
+# part b
+AP_start <- start(AP)
+AP_end <- end(AP)
+AP_freq <- frequency(AP)
+
+JJ_start <- start(JJ)
+JJ_end <- end(JJ)
+JJ_freq <- frequency(JJ)
+
+cat("AirPassengers start: ", AP_start, "\n")
+cat("AirPassengers end: ", AP_end, "\n")
+cat("AirPassengers frequency: ", AP_freq, "\n")
+
+cat("JohnsonJohnson start: ", JJ_start, "\n")
+cat("Johnson Johnson end: ", JJ_end, "\n")
+cat("Johnson Johnson frequency: ", JJ_freq, "\n")
+
+```
+### Part C:
+Plot separate time plots for the two time series. Describe what the time plots tell us about the time series and compare the two plots. What are the main features of each of the time series?
+```{r, echo = FALSE}
+plot(AP, main = "AirPassengers Time Plot", xlab = "Year", ylab = "# of Passengers (thousands)")
+```
+The AirPassengers time plot shows a clear upward trend with seasonality. It tells us that over time the number of passengers has increased, and per year this number typically peaks mid-year. Additionally, trend line appears to be more linear than than the Johnson - the latter having a more exponential, or curved, trend.
+
+```{r, echo = FALSE}
+plot(JJ, main = "JohnsonJohnson Time Plot", xlab = "Year", ylab = "Earnings ($) per share")
+```
+The JohnsonJohnson time plot also has a clear upward trend with fluctuations. However, it's a little more difficult to determine if these fluctuations are aligned with a consistent time index. The greater increases tell us that the company had a greater jump in growth between those quarters in the company's earnings.
+
+### Part D:
+Plot seasonal box plots of the two time-series and describe what those plots are conveying about time series
+```{r, echo = FALSE}
+boxplot(AP ~ cycle(AP), main = "Seasonal Boxplot of AirPassengers")
+boxplot(JJ ~ cycle(JJ), main = "Seasonal Boxplot of JohnsonJohnson")
+```
+The seasonal box plot of the AirPassengers shows us the distribution of values for each of the months of a year. The distributions clearly show seasonality of higher numbers of passengers in the summer (June, July, and August) and lower number of passengers in the winter (November through February). We see this in the median and third quartile values.
+
+The seasonal box plot of Johnson & Johnson earnings per share do have some variability between the quarters. For example, Q3 appears to be higher than the others. However, this seasonality is not as pronounced. 

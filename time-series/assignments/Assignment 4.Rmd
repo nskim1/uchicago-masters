@@ -1,0 +1,193 @@
+---
+title: "Assignment 4"
+author: "Natalie Kim"
+date: "2024-07-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE, echo = FALSE}
+library(TSA)
+library(ggplot2)
+library(forecast)
+library(tseries)
+
+library(readxl)
+library(dplyr)
+
+file_list <- unzip("Traffic Flow Data.zip", list = TRUE)
+print(file_list)
+
+# Combining data
+excel_files <- file_list$Name[grepl("\\.xls$", file_list$Name)]
+unzip("Traffic Flow Data.zip", files = excel_files, exdir = "Traffic Flow Data")
+
+combined_data <- lapply(excel_files, function(file) {
+  file_path <- file.path("Traffic Flow Data", file)
+  read_excel(file_path)
+}) %>% bind_rows()
+```
+
+
+## Question 1
+Combine the data from the 16 files into a single dataset and plot it. Describe the dataset characteristics.
+
+```{r}
+# Pull out I80E Exit 1 Data
+data180E <- combined_data[["...5"]]
+
+data180E <- na.omit(data180E)
+
+# dropping "180" and "1EXIT" from the data
+data180E_clean <- data180E[!data180E %in% c("I80E","1EXIT")]
+
+# removing totals from data
+totals_indices <- seq(25, length(data180E_clean), by = 25)
+data180E_clean <- data180E_clean[-totals_indices]
+
+data180E_num <- as.numeric(data180E_clean)
+
+#print(data180E_num)
+
+# Create Time Series Object
+traffic180E <- ts(data = data180E_num, frequency = 1)
+```
+
+
+## Question 2
+Split the dataset into a training dataset which includes 6/16/2013 - 6/30/2013 samples and a test dataset which includes 7/1/2013 samples and plot the ACF and PACF.
+
+```{r}
+# Split the data set
+train <- window(traffic180E, start = 25, end = 384)
+test <- window(traffic180E, end = 24) # my data put July 1 xls file before June's data
+
+tsdisplay(train)
+```
+
+When we plot the time series plot, the ACF, and the PACF of the training data we can observe a few things. First in the timer series, we see a pattern of seasonality that occur every 24 time points, corresponding to our 24 hours in each day. Another note is that there is no trend, and the amplitude of the this function remains constant over time. In the ACF we see a pattern that mimics a cosine function, confirming our observation earlier of seasonality in this time series. We can also take into account the lag significance where the ACF peaks at lags 12 and 24. The partial autocorrelations measure the correlation between the time series and its lagged values after removing the effects of the intervening lags. WE can see that there are large value sat lags 1 and 2 signifying that the current value of the series is strongly related to its values at the previous one and two time periods. Beyond these lags, the PACF values generally stabilize and fall within the significance bounds. We can conclude that the major dependencies are captured iwthin the first few lags.
+
+## Question 3
+Build an 𝐴𝑅𝐼𝑀𝐴(𝑝,𝑑,𝑞) model using the training dataset and R auto.arima() function. Change the values of 𝑝 and 𝑞 and determine the best model using AICc and BIC values. Do AICc and BIC select the same model as the best model? For each derived model, review the residual plots for the residuals ACF and normality.
+
+```{r}
+# Initial auto.arima model
+model0 <- auto.arima(train, seasonal = FALSE)
+summary(model0)
+# plot(model0$residuals) # plot of residuals
+
+# empty lists to compare models, AICc and BIC
+models <- list()
+aicc_values <- numeric()
+bic_values <- numeric()
+
+# Changing values of p and q
+for (p in 0:3) {
+  for (q in 0:3) {
+    model <- auto.arima(train, max.p = p, max.q = q, seasonal = FALSE)
+    models[[paste(p,q,sep = "-")]] <- model
+    aicc_values <- c(aicc_values, model$aicc)
+    bic_values <- c(bic_values, model$bic)
+    plot(model$residuals, main = paste("ARIMA(", p, ",", model$arma[6], ",", q, ")", sep = ""))
+  }
+}
+
+aicc_model <- models[[which.min(aicc_values)]]
+bic_model <- models[[which.min(bic_values)]]
+
+print("Best model using AICc: ")
+summary(aicc_model)
+
+print("Best model using BIC")
+summary(bic_model)
+
+# Residual Plots of ARIMA(2,0,3)
+par(mfrow = c(2, 2))
+plot(aicc_model$residuals, main = "Residuals of ARIMA(2,0,3) (AICc)")
+Acf(aicc_model$residuals, main = "ACF of Residuals of ARIMA(2,0,3)")
+Pacf(aicc_model$residuals, main = "PACF of Residuals of ARIMA(2,0,3)")
+qqnorm(aicc_model$residuals, main = "Normal Q-Q Plot of Residuals of ARIMA(2,0,3)")
+qqline(aicc_model$residuals)
+
+# Residual Plots of ARIMA(2,0,2)
+par(mfrow = c(2, 2))
+plot(bic_model$residuals, main = "Residuals of ARIMA(2,0,2) (BIC)")
+Acf(bic_model$residuals, main = "ACF of Residuals of ARIMA(2,0,2)")
+Pacf(bic_model$residuals, main = "PACF of Residuals of ARIMA(2,0,2)")
+qqnorm(bic_model$residuals, main = "Normal Q-Q Plot of Residuals of ARIMA(2,0,2)")
+qqline(bic_model$residuals)
+
+```
+
+The model that `auto.arima()` function returned was ARIMA(2,0,3) with a AICc of 4455.88 and BIC of 4482.77. The best model using the AICc criteria was also ARIMA(2,0,3). However, according to the BIC criteria, the best model was ARIMA(2,0,2). Both criteria agree that the autoregressive term  that the number of lagged observations is by the order of 2, but AICc finds that an additional MA term would provide a better fit. The fact that BIC does not agree with ARIMA(2,0,3) suggests that the improvement was not enough to justify the complexity and penalty.
+
+In addition to the time series plot of the residuals, I additionally plotted the ACF, PACF, and QQ plot. Both residual plots appear to be randomly scattered around zero and with no obvious patterns. Aside from one spike just before 250, the variance also appears to be fairly constant over time. After investigating this spike, I saw that it's due to an outlier in trend in the data on June 24th. We can confirm this difference in the data based upon the original time series plot as well. Both ACF and PACF plots show no significant autocorrelation except for at lags 23, 24, and 25 indicating that neither model has fully captured the structure of the data at these points. Both QQ plots hover around the 45 degree line indicating that the residuals are approximately normally distributed, however they do have some deviations at the tails. Overall, both models do not appear to be significantly different from each other just based upon these residual plots.
+
+## Question 4
+Build a day of the week seasonal 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃, 𝑄, 𝐷)𝑠 model using the training dataset and R auto.arima() function.
+
+```{r}
+# weekly data
+train_dat <- data180E_num[-(1:24)]
+wkly_traffic <- ts(train_dat, frequency = 168)
+
+# week seasonal model
+wk_seasonal <- auto.arima(wkly_traffic, seasonal = TRUE)
+summary(wk_seasonal)
+
+```
+
+
+## Question 5
+Use the 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃, 𝑄, 𝐷)𝑠 model from Question 4 to forecast for July 1st (which is a Monday). Plot your result.
+
+```{r}
+july1_forecast <- forecast(wk_seasonal, h = 24)
+
+autoplot(july1_forecast, main = "July 1st Forecast", ylab = "Traffic", xlab = "Time")
+```
+
+
+## Question 6
+Build a hour of the day seasonal 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃, 𝑄, 𝐷)𝑠model using the training dataset and R auto.arima() function.
+
+```{r}
+# hourly ts object
+hourly_traffic <- ts(train_dat, frequency = 24)
+
+# week seasonal model
+hr_seasonal <- auto.arima(hourly_traffic, seasonal = TRUE)
+summary(hr_seasonal)
+```
+
+## Question 7
+Use the 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃, 𝑄, 𝐷)𝑠 model from Question 6 to forecast for July 1st (which is a Monday). Plot your result.
+
+```{r}
+july1_forecast2 <- forecast(hr_seasonal, h = 24)
+
+autoplot(july1_forecast2, main = "July 1st Forecast (Hour of the Day ARIMA)", ylab = "Traffic", xlab = "Time")
+
+```
+
+## Question 8
+Compare the forecast of the models from Questions 5 and 7 for July 1 8:00, 9:00, 17:00 and 18:00, which model is better (Questions 4 or 6)?
+
+```{r}
+times <- c(8, 9, 17, 18)
+weekly_forecasts <- july1_forecast$mean[times]
+hourly_forecasts <- july1_forecast2$mean[times]
+
+
+data.frame(
+  Hours = c("8:00", "9:00", "17:00", "18:00"),
+  Weekly_Model = weekly_forecasts,
+  Hourly_Model = hourly_forecasts,
+  Actual = test[c(8, 9, 17, 18)]
+)
+```
+
+The weekly model, from Question 4, performed better. From the table above, we can see that the forecasted models are much closer to the actual values than the forecasts made by the Daily Model.

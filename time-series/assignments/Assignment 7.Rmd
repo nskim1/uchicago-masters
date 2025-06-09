@@ -1,0 +1,199 @@
+---
+title: "Assignment 7"
+author: "Natalie Kim"
+date: "2024-08-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(TSA)
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(vars)
+```
+
+## Question 1:
+Load the data and calculate the average cost of a night’s accommodation in Victoria each month (i.e.,
+Cost variable).
+a) Plot the CPI and Cost time series.
+b) Plot the Cost time series against the CPI time series and calculate the correlation between CPI
+and Cost.
+Discuss your results and explain why the logarithms of both variables need to be taken before fitting any
+models.
+c) Plot the 𝑙𝑜𝑔(𝐶𝑃𝐼) and 𝑙𝑜𝑔(𝐶𝑜𝑠𝑡) time series and calculate the correlation between the
+logarithms of both CPI and Cost.
+
+```{r}
+load("motel.rda")
+takings <- window(motel[, "Takings"])
+roomnights <- window(motel[, "Roomnights"])
+cpi <- window(motel[, "CPI"])
+
+# calculate the cost variable
+cost <- takings / roomnights
+
+# plot CPI and cost time series
+autoplot(cpi, xlab='Time', ylab='CPI', main='CPI Time Series')
+autoplot(cost, xlab='Time', ylab='Cost', main='Cost Time Series')
+
+# plot cost time series against CPI time series
+plot(cpi, cost, xlab='CPI', ylab='Cost', main='Cost vs. CPI')
+
+# calculate correlation
+correlation <- cor(cpi, cost)
+print(paste("Correlation of CPI and Cost: ", correlation))
+
+# plot log(CPI) and log(cost) time series
+log_cpi <- log(cpi)
+log_cost <- log(cost)
+
+autoplot(log_cpi, xlab='Time', ylab='log(CPI)', main='log(CPI) Time Series')
+autoplot(log_cost, xlab='Time', ylab='log(Cost)', main='log(Cost) Time Series')
+
+# correlation between log(CPI) and log(Cost)
+log_correlation <- cor(log_cpi, log_cost)
+print(paste("Correlation of log(CPI) and log(Cost): ", log_correlation))
+
+```
+
+#### Discuss your results and explain why the logarithms of both variables need to be taken before fitting any models.
+The correlation between CPI and Cost is 0.99 indicating a very strong positive and linear relationship. This is further confirmed when we plot Cost against CPI. In terms of applying the log transformation, there are several reasons. First, we can see that Cost does have unstable variance - and when we did apply the transformation we can see that the variance is affected when comparing the two time series plots of Cost and log(Cost). Typically one of the biggest reasons for using a log transformation is linearize the relationship between the two variables. However we can see and that the two already have a very strong relationship. Thus, the reasons for applying a log transformation to CPI as well lies in some more subtle reasons such as managing the different scales, or units. Finally, applying the log function converts the coefficients to elasticities which is more intuitive for interpretation. 
+
+
+## Question 2:
+Use the linear model with time series components function tslm() to fit a linear model to the
+𝑙𝑜𝑔(𝐶𝑜𝑠𝑡) time series as a function of the 𝑙𝑜𝑔(𝐶𝑃𝐼) time series (i.e., CPI ➔ Independent
+variable, Cost➔ Dependent variable).
+b) Plot 𝑙𝑜𝑔(𝐶𝑃𝐼) against 𝑙𝑜𝑔(𝐶𝑜𝑠𝑡) and the fitted trend.
+c) Use the summary() function to summarize the generated model , and the checkresiduals()
+function to evaluate the residuals.
+Discuss your results.
+
+```{r}
+# use tslm() to fit model to log(Cost)
+lin_mod <- tslm(log_cost ~ log_cpi)
+
+# plot log(CPI) against log(Cost)
+plot(log_cpi, log_cost, xlab="log(CPI)", ylab="log(Cost)", main = "log(CPI) vs log(Cost) & trend")
+abline(lin_mod, col='blue')
+
+# summary & check residuals
+summary(lin_mod)
+checkresiduals(lin_mod)
+
+```
+
+The model returned a very high adjusted R-squared is 0.986 indicating that the log(CPI) explains 98.6% of the variability in log(Cost). Both the coefficient and the intercept are highly significant for the log_cpi coefficient of 1.3 - indicating that the log(CPI) value is a strong predictor for the log(Cost) value. The histogram does show that the residuals are approximately normal. However, the residuals show significant autocorrelation from the ACF plot with majority of the lags outside of the confidence lines, indicating that this model is still missing some dynamics of the data.
+
+
+## Question 3:
+Use the auto.arima() function to fit an appropriate regression model with ARIMA errors to the Cost and
+CPI time series(i.e., CPI ➔ Independent variable, Cost➔ Dependent variable). Set the Order of seasonal-
+differencing argument, D, to 1 and the ‘lambda’ argument to 0 to reflect a logarithmic transformation.
+a) Use the summary() function to summarize the generated model.
+b) Use the checkresiduals() function to evaluate the residuals.
+Discuss your results.
+
+```{r}
+# auto.arima()
+model2 <- auto.arima(cost, xreg=cpi, D=1, lambda=0)
+
+# summary and check residuals
+summary(model2)
+checkresiduals(model2)
+```
+
+#### Results Discussion
+The model that auto.arima returned an ARIMA(0,1,1)(0,1,2)[12] model. From checking the residuals, we see that the time series plot is centered around zero and does not have any obvious patterns. The ACF Plot shows that all but one lag (lag 18) are within the bounds of confidence, thus there is no significant autocorrelation. The histogram shows an approximately normally distributed residuals. Additionally p-value from the the Ljung-Box test was 0.3349 which is greater than 0.05. We therefore fail to reject the null hypothesis that there is no autocorrelation up to lag 24.
+
+## Question 4:
+a) Calculate and plot a naïve forecast of CPI for the next 18 months.
+b) Forecast and plot the average price per room (i.e., Cost) for the next 18 months using the fitted
+model from Question 3 and the naïve forecast of CPI.
+Discuss your results.
+
+```{r}
+# naive forecast of CPI
+naive_cpi <- snaive(cpi, h=18)
+autoplot(cpi) +
+  autolayer(naive_cpi, series = "Naive Forecast") +
+  ggtitle("CPI Forecasts for next 18 months") +
+  xlab("Month") + ylab("CPI") +
+  guides(colour = guide_legend(title = "Series")) +
+  theme_minimal()
+
+# forecast of Cost
+naive_cpi_forecast <- as.numeric(naive_cpi$mean)
+forecast_cost <- forecast(model2, xreg=matrix(naive_cpi_forecast, ncol=1), h=18)
+
+autoplot(cost) +
+  autolayer(forecast_cost, series = "Forecasted Cost") +
+  ggtitle("Cost Forecasts for Next 18 Months") +
+  xlab("Month") + ylab("Cost") +
+  guides(colour = guide_legend(title = "Series")) +
+  theme_minimal()
+
+```
+
+The naive forecast continues the upward trend, though not very well for the CPI
+
+## Question 5:
+a) Use the VAR() function to fit a VAR(10) model to the 𝑙𝑜𝑔(𝐶𝑜𝑠𝑡) and 𝑙𝑜𝑔(𝐶𝑃𝐼) time series. Set
+the ‘type’ and ‘season’ arguments to 'both' and 12, respectively.
+b) Forecast and plot the average price per room (i.e., Cost) and CPI for the next 18 months using
+your fitted model.
+c) Plot the residuals’ ACF.
+Discuss your results.
+
+```{r}
+costCPI_df <- data.frame(log_Cost = log_cost, log_CPI = log_cpi)
+
+# fit VAR(10) model
+var10_model <- VAR(costCPI_df, p = 10, type = "both", season = 12)
+
+summary(var10_model)
+
+# forecast and plot Cost and CPI for next 18 months
+var_forecast <- predict(var10_model, n.ahead = 18)
+
+forecast_log_cost <- var_forecast$fcst$log_Cost[, "fcst"]
+forecast_log_cpi <- var_forecast$fcst$log_CPI[, "fcst"]
+
+# Convert forecasts back to the original scale
+forecast_cost <- exp(forecast_log_cost)
+forecast_cpi <- exp(forecast_log_cpi)
+
+# Create time series objects for the forecasted values
+start_time <- end(ts(log_cost, start = c(1980, 1), frequency = 12))
+forecast_log_cost_ts <- ts(forecast_log_cost, start = start_time + c(0, 1), frequency = 12)
+forecast_log_cpi_ts <- ts(forecast_log_cpi, start = start_time + c(0, 1), frequency = 12)
+
+# Plot the forecasts for log(Cost)
+autoplot(ts(log_cost, start = c(1980, 1), frequency = 12)) +
+  autolayer(forecast_log_cost_ts, series = "Forecasted log(Cost)", PI = FALSE) +
+  ggtitle("Forecasted log(Cost) for the Next 18 Months") +
+  xlab("Time") + ylab("log(Cost)") +
+  theme_minimal()
+
+# Plot the forecasts for log(CPI)
+autoplot(ts(log_cpi, start = c(1980, 1), frequency = 12)) +
+  autolayer(forecast_log_cpi_ts, series = "Forecasted log(CPI)", PI = FALSE) +
+  ggtitle("Forecasted log(CPI) for the Next 18 Months") +
+  xlab("Time") + ylab("log(CPI)") +
+  theme_minimal()
+
+# residudals' ACF
+residuals_var <- resid(var10_model)
+acf(residuals_var[, "log_Cost"], main = "ACF of Residuals for log(Cost)")
+acf(residuals_var[, "log_CPI"], main = "ACF of Residuals for log(CPI)")
+```
+
+The high R-squared values (0.9998) indicate that the VAR(10) model explains nearly all the variability in the data and the low residual standard error suggests that the model has a high level of precision. From the forecasted plots, the VAR(10) model appears to capture the upward trend better of both CPI and Cost than the two models from Question 4. The residuals for both log(CPI) and log(Cost) show no autocorrelation since all lags are within the boundaries of confidence. Thus we can conclude that the Var(10) model effectively captures the dynamics of this data. 
+
+
+

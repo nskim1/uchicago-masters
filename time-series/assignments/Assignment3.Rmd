@@ -1,0 +1,178 @@
+---
+title: "Assignment 3"
+author: "Natalie Kim"
+date: "2024-07-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(TSA)
+library(ggplot2)
+library(forecast)
+library(tseries)
+```
+library(TSA)
+library(ggplot2)
+library(forecast)
+library(tseries)
+
+## Question 1
+Load the data set and split it into a training and test data sets.
+```{r}
+# Load usgdp.rda dataset
+load("usgdp.rda")
+
+# Define time series object
+gdp <- ts(usgdp$GDP, start = 1960, frequency = 1)
+
+# Split into training dataset (1960 - 2012) and a test dataset (2013 - 2017)
+train <- window(gdp, start = 1960, end = 2012)
+test <- window(gdp, start = 2013, end = 2017)
+```
+
+## Question 2
+In part 2 you are asked to plot the training data set and discuss if Box-Cox (BC) transformation is needed. Consider using the BoxCox.Lambda function, or running you analysis with and without the BC transformation and compare the sum of squared errors in part 8.
+
+```{r}
+# Plot training data set
+tsdisplay(train, main = "US GDP")
+
+# BoxCox.Lambda function
+lambda <- BoxCox.lambda(train)
+print(lambda)
+
+# Plot With BC transformation
+train %>% BoxCox(lambda = lambda) %>% autoplot()
+
+# Applying Box Cox transformation
+BCtrain <- BoxCox(train, lambda)
+```
+
+#### Is the Box-Cox transformation necessary for this data? Why?
+Yes, the Box-Cox transformation is necessary for this day based upon the results of the differencing methods. Although upon our initial visual inspection of the time series plot above the variance does not appear to be a function of the mean, since the amplitude of the data seems relatively consistent, this is not the case after we looked at the first and second order differences in part 3. The mean was able to be stabilized through KPSS, but the variance remained a function of time. After plotting the second order difference of the transformed data, we can see that the variance is much more stabilized.
+
+
+## Question 3
+Calculate the 1st and 2nd order difference of the training dataset and apply the KPSS test to test for stationarity. The kpss.test() function is available in the ‘tseries’ library.
+
+```{r}
+# Plot the 1st and 2nd order difference of the original data
+train_diff1 <- diff(train, differences = 1)
+train_diff2 <- diff(train, differences = 2)
+
+autoplot(train_diff1, main= "1st Order Difference of Training Data")
+autoplot(train_diff2, main = "2nd Order Difference of Training Data")
+
+# 1st and 2nd order differences after BoxCox transformation
+BCtrain_diff1 <- diff(BCtrain, differences = 1)
+BCtrain_diff2 <- diff(BCtrain, differences = 2)
+
+autoplot(BCtrain_diff2, main = "2nd Order Difference of Transformed Training Data")
+
+# Apply KPSS Test for Stationarity - determine which difference order results in a stationary dataset
+og_kpss <- kpss.test(BCtrain)
+diff1_kpss <- kpss.test(BCtrain_diff1)
+diff2_kpss <- kpss.test(BCtrain_diff2)
+
+print(paste("KPSS Test Statistic for Original Series: ", og_kpss$statistic))
+print(paste("p-value for Original Series: ", og_kpss$p.value))
+print(paste("KPSS Test Statistic for First-Order Differenced Series: ", diff1_kpss$statistic))
+print(paste("p-value for First-Order Differenced Series: ", diff1_kpss$p.value))
+print(paste("KPSS Test Statistic for Second-Order Differenced Series: ", diff2_kpss$statistic))
+print(paste("p-value for Second-Order Differenced Series: ", diff2_kpss$p.value))
+```
+
+The first order differencing plot is not stationary because it neither has a constant mean nor a constant variance over time. As time increases, we can see both increase. The increasing mean suggests a non-linear trend - which confirms what we saw earlier in the time series plot in part 2. The second order differencing plot does have a constant mean, however not a constant variance. The increasing variance in both plots indicate to us a need for additional variation stabilization methods.
+
+Using the KPSS test results, we can determine that the 2nd order difference is stationary because it returns the lowest statistic, and the p-value is greater than 0.05.
+
+## Question 4
+Fit the best ARIMA model using the auto.arima() function and discuss the suggested model
+
+```{r}
+# Fit ARIMA model
+fit <-  auto.arima(train, d = 2, lambda = lambda)
+
+# Report p,d,q, and coefficient values
+summary(fit)
+```
+
+The suggested ARIMA model returns the following values: p = 0, d = 2, and q = 2 which indicates to us that this a second-order differenced model with no autoregressive terms and two moving average terms (ma1 = -0.4938 and ma2 = -0.2277). Additionally, we applied the lambda value of 0.23 for a Box-Cox transformation to stabilize the variance. We can see that from the training set data, ACF1 has a value close to 0, indicating that the residuals are not autocorrelated. 
+
+
+## Question 5
+Calculate the sample EACF and use the Arima() and summary() functions to assess additional models.
+
+```{r}
+# load eacfr file
+source("eacf.r")
+
+# Compute sample EACF
+eacf(BCtrain)
+
+# Find additional models limiting to q,p ≤ 2 and d ≤ 2
+models <- list()
+for (p in 0:2) {
+  for (q in 0:2) {
+    for (d in 0:2) {
+      model <- Arima(train, order = c(p,2,q), lambda = lambda)
+      models[[paste0("ARIMA(", p, d, q, ")")]] <- model
+    }
+  }
+}
+
+# Use model summary() function to compare AICc values
+aic_values <- sapply(models, function(model) model$aicc)
+print(sort(aic_values))
+```
+
+The EACF results show us all of the possible models that may work for our data. 
+
+There were three models that returned with the best AICc. Those were ARIMA(002), ARIMA(012), and ARIMA(022). Interestingly, the AICc of these three suggested models are all equivalent. Therefore the p and q values that should be used are 0 and 2 respectively. However, according to the AICc, the d value could be 0, 1, or 2. Based on our findings from Part 3, we know that the best difference to use is 2. Therefore, the best model from this is ARIMA(022).
+
+## Question 6
+Use the model chosen in part 4 - ARIMA(0,2,2) - we plotted the forecast of the US GDP for 2013 - 2017. We also forecasted the 80% and 95% confidence intervals as well.
+
+```{r}
+# Forecast and Plot GDP forecasts with 80 and 95% confidence levels for 2013-2017
+gdp_forecast <- forecast(fit, h = length(test), level = c(80, 95))
+
+autoplot(gdp_forecast, main = "US GDP Forecast for 2013 - 2017 using ARIMA(0,2,2)")
+```
+
+## Question 7
+Evaluate your forecasts error (i.e., error = Actual Values – Forecasted Values) and plot the forecast error. Remember to use the forecast $mean element for the forecast estimate.
+
+```{r}
+# Compare forecasts
+forecast_errors <- test - gdp_forecast$mean
+
+autoplot(forecast_errors, main = "Forecast Errors")
+```
+
+The 5 plotted errors show a trend that it is increasing over time. Because they are not randomly distributed over time, this indicates that the model did not properly capture a component of the data. Looking at our actual data, this increasing error is likely due to the difference in trend starting in 2013. Our model was fit to training data that resembled a quadratic form. However, looking at our test data, we can see that the trend is actually more linear. Thus, as time increases, our forecasts would continue to increase at a rate an order faster than the actual.
+
+## Question 8
+
+```{r}
+# Sum of squared errors
+sum(forecast_errors^2)
+```
+
+## Question 9
+
+```{r}
+# Naive forecast for 2013-2017
+naive_forecast <- snaive(BCtrain, h = length(test))
+
+naive_errors <- test - naive_forecast$mean
+
+sum(naive_errors^2)
+```
+
+#### Did your best model beat the naive approach?
+Yes, our model did beat the naive approach. The sum of square errors for my model was 1.670055e+23 compared to the greater naive error of 1.633555e+27. 

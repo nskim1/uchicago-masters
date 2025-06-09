@@ -1,0 +1,152 @@
+---
+title: "Assignment 2"
+author: "Natalie Kim"
+date: "2024-06-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE,include=FALSE}
+# Load the .rda file
+load("visitors.rda")
+
+# Inspect the structure of the loaded data
+str(visitors)
+
+# Check the class of the Quarter column
+class(visitors$Quarter)
+
+# Inspect unique values of the Quarter column
+unique(visitors$Quarter)
+
+# Load necessary libraries
+library(dplyr)
+library(tsibble)
+library(zoo)
+
+# Convert the tsibble to a tibble
+visitors_tbl <- as_tibble(visitors)
+
+# Convert the 'Quarter' column to a proper date format
+visitors_data <- visitors_tbl %>%
+  select(Quarter, Arrivals) %>%
+  mutate(Quarter = as.Date(as.yearqtr(Quarter)))
+
+# Inspect the modified data
+head(visitors_data)
+```
+
+### Question 1
+```{r, echo = FALSE}
+# Convert the data to a time series object
+visitors_ts <- ts(visitors_data$Arrivals, start = c(1981, 1), frequency = 4)
+
+# Plot the data
+plot(visitors_ts, main = "Time Plot of Arrivals", xlab = "Quarter", ylab = "Number of Arrivals")
+
+```
+
+Main features of this plot include a clear increasing, or positive trend over time. As time passes, the number of arrivals increases. There is also clear seasonality within each year. We see this by the repeating peaks and valleys that occur every four points on regular intervals.
+
+### Question 2
+Based on the plot, the appropriate Holt-Winters method for this data set is multiplicative. We can see that the variation in the number of arrivals increases over time. This is most clear if we compare the amplitude from the first year to the last year.
+
+### Question 3
+```{r,echo=FALSE}
+library(forecast)
+
+# Linear trend with additive seasonality
+hw_additive <- hw(visitors_ts, seasonal = "additive", h = 20)
+plot(hw_additive, main = "Linear Trend with Additive Seasonality")
+
+# Linear trend with multiplicative seasonality
+hw_multiplicative <- hw(visitors_ts, seasonal = "multiplicative", h = 20)
+plot(hw_multiplicative, main = "Linear Trend with Multiplicative Seasonality")
+
+# Linear trend with additive seasonality and damping
+hw_additive_damped <- hw(visitors_ts, seasonal = "additive", damped = TRUE, h = 20)
+plot(hw_additive_damped, main = "Linear Trend with Additive Seasonality and Damping")
+
+# Linear trend with multiplicative seasonality and damping
+hw_multiplicative_damped <- hw(visitors_ts, seasonal = "multiplicative", damped = TRUE, h = 20)
+plot(hw_multiplicative_damped, main = "Linear Trend with Multiplicative Seasonality and Damping")
+
+# Exponential trend with multiplicative seasonality
+hw_exponential_multiplicative <- hw(visitors_ts, exponential = TRUE, seasonal = "multiplicative", h = 20)
+plot(hw_exponential_multiplicative, main = "Exponential Trend with Multiplicative Seasonality")
+
+```
+
+### Question 4
+```{r, echo=FALSE}
+# Calculate accuracy measures for each method
+accuracy_additive <- accuracy(hw_additive)
+accuracy_multiplicative <- accuracy(hw_multiplicative)
+accuracy_additive_damped <- accuracy(hw_additive_damped)
+accuracy_multiplicative_damped <- accuracy(hw_multiplicative_damped)
+accuracy_exponential_multiplicative <- accuracy(hw_exponential_multiplicative)
+
+# Extract RMSE values
+rmse_additive <- accuracy_additive[2]
+rmse_multiplicative <- accuracy_multiplicative[2]
+rmse_additive_damped <- accuracy_additive_damped[2]
+rmse_multiplicative_damped <- accuracy_multiplicative_damped[2]
+rmse_exponential_multiplicative <- accuracy_exponential_multiplicative[2]
+
+# Create a data frame to compare RMSE values
+rmse_comparison <- data.frame(
+  Method = c("Linear Additive", "Linear Multiplicative", "Linear Additive Damped", "Linear Multiplicative Damped", "Exponential Multiplicative"),
+  RMSE = c(rmse_additive, rmse_multiplicative, rmse_additive_damped, rmse_multiplicative_damped, rmse_exponential_multiplicative)
+)
+
+# Print the RMSE comparison
+print(rmse_comparison)
+
+```
+Given the lower the RMSE value signifies a better fit to the data, the preferred method is the Linear Multiplicative Damped with an RMSE of 7460.002. The preferred method would be the one with the lowest RMSE value, as it indicates the most accurate forecasts based on the historical data.
+
+### Question 5
+```{r, echo=FALSE}
+# Check residuals of the best model
+checkresiduals(hw_multiplicative_damped)
+
+summary(hw_multiplicative_damped)
+```
+
+
+### Question 6
+```{r, echo=FALSE}
+snaive_forecast <- snaive(visitors_ts, h = 20)
+
+# Accuracy
+accuracy_snaive <- accuracy(snaive_forecast)
+
+# Extract the RMSE for the seasonal naïve model
+accuracy_snaive[2]
+```
+Yes, the Linear Multiplicative Damped beat the seasonal naive approach since its RMSE of 7460.002 is still smaller than the RMSE of the seasonal naive approach of 10298.
+
+### Question 7
+
+##### (a)
+**Value**: The value plot represents the original time series of the number of persons in the civilian labor force. The series shows an upward trend, indicating growth in the labor force over time. There are also fluctuations that suggest seasonality. We can also note the slight dip around 1991-1992.
+
+**Trend**: The trend component shows a steady increase over the period. Between roughly 1991 and 1993, the trend stabilizes slighly before increasing again around 1994.
+
+**Seasonal**: The plot captures the regular, periodic fluctuations that repeat within each year. The seasonal pattern remains relatively stable over time, with some months consistently showing higher or lower values. For example, there is a noticeable increase in March and a decrease in January and February.
+
+**Remainder**: The remainder component contains the variations that are not explained by the trend or seasonal components. Ideally, this should resemble white noise, with no obvious patterns or trends. However, around 1991-1992, there are anomalies or irregular events during that period.
+
+**Seasonal Component Plot**: The second figure provides a detailed look at the seasonal component for each month across the years. Each panel represents a month, showing how the seasonal effect varies over the years. There are noticeable positive peaks in March, indicating a regular increase in labor force numbers. Whereas January and February show a general decrease. From April to December, there are various fluctuations, with consistent patterns such as a drop in September and December.
+
+##### (b)
+Yes, the recession of 1991/1992 is visible in the estimated components. We noticed this in the value component and the remainder component. Additionally, we can see the effect in the trend component as it appears that the labor force increase slowed down. As seen earlier, the remainder component shows significant deviations from the baseline around 1991-1992. These deviations suggest irregular events or anomalies impacting the labor force numbers, further indicating the recession.
+
+
+
+
+
+

@@ -1,0 +1,267 @@
+---
+title: "Assignment 6"
+author: "Natalie Kim"
+date: "2024-07-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(TSA)
+library(ggplot2)
+library(forecast)
+library(tseries)
+```
+
+## Question 1
+Load and plot the visitors dataset and plot the dataset with and without the Box Cox transformation.
+Describe the main dataset characteristics.
+
+```{r}
+load("visitors_monthly.rda")
+
+str(visitors)
+
+visitors_ts <- ts(visitors$x, start = c(1985, 5), frequency = 12)
+
+# Without BoxCox transformation
+autoplot(visitors_ts, xlab = "Month", ylab = "Visitors", main = "Plot of Monthly Australian short-term overseas visitors")
+
+# With BC Transformation
+lambda <- BoxCox.lambda(visitors_ts)
+visitors_boxcox <- BoxCox(visitors_ts, lambda)
+
+autoplot(visitors_boxcox, xlab = "Month", ylab = "Visitors", main = "Plot of Monthly Australian short-term overseas visitors - BoxCox Transformation")
+
+```
+
+#### Describe main characteristics of dataset
+There is a clear upward trend over the course of the data set. There is also a clear pattern of yearly seasonality, that appears to peak at the beginning of the year, drop in the middle and then rise again for the new year. In the plot of data that is not transformed, we see that the amplitude, or variance, does increase over time. The Box-Cox transformation that was applied and plotted in the second chart shows a much more stabilized variance. One notable dip in tourist numbers is in the summer of 2003.
+
+## Question 2
+Build two models using the entire visitors dataset
+a. Model 1: Let the auto.arima() function determine the best order 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃, 𝑄, 𝐷)𝑠
+model.
+b. Model 2: Let the ets() function determine the best model for exponential smoothing.
+
+```{r}
+# Model 1
+model1 <- auto.arima(visitors_ts, lambda = "auto")
+summary(model1)
+
+# Model 2
+model2 <- ets(visitors_ts, lambda = "auto")
+summary(model2)
+```
+
+## Question 3
+In this section you will apply the time-series cross validation method to train and test various models.
+Use the following values when training and testing the models.
+
+```{r}
+k = 160 # minimum number of samples required to train the model
+n = length(visitors_ts)
+h = 12 # forecast horizon
+p = 12 # period
+
+st <- tsp(visitors_ts)[1]+(k-2)/p #  gives the start time in time units
+
+mae_1 <- matrix(NA,n-k,h)
+mae_2 <- matrix(NA,n-k,h)
+
+rmse_1 <- matrix(NA, n - k, h)
+aicc_1 <- numeric(n - k)
+rmse_2 <- matrix(NA, n - k, h)
+aicc_2 <- numeric(n - k)
+
+# Arima
+for(i in 1:(n-k))
+{
+  ### One Month (observation) rolling forecasting
+  
+  # Expanding Window 
+  train_1 <- window(visitors_ts, end=st + i/p)  ## Window Length: k+i
+  
+  # Sliding Window - keep the training window of fixed length. 
+  # The training set always consists of k observations.
+  train_2 <- window(visitors_ts, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  
+  test <- window(visitors_ts, start=st + (i+1)/p, end=st + (i+h)/p) ## Window Length: h
+
+  if (i<4) {
+  cat(c("*** CV", i,":","len(Expanding Window):",length(train_1), "len(Sliding Window):",length(train_2), "len(Test):",length(test),'\n'  ))
+  cat(c("*** TRAIN -  Expanding WIndow:",tsp(train_1)[1],'-',tsp(train_1)[2],'\n'))
+  cat(c("*** TRAIN - Sliding WIndow:",tsp(train_2)[1],'-',tsp(train_2)[2],'\n'))
+  cat(c("*** TEST:",tsp(test)[1],'-',tsp(test)[2],'\n'))
+  cat("*************************** \n \n")
+  }
+  
+  # ARIMA model for expanding window
+  fit_1 <- tryCatch({
+    Arima(train_1, order = c(1, 0, 1), seasonal = list(order = c(0, 1, 2), period = p),
+          include.drift = TRUE, lambda = "auto", method = "ML")
+  }, error = function(e) NULL)
+  
+  # ARIMA model for sliding window
+  fit_2 <- tryCatch({
+    Arima(train_2, order = c(1, 0, 1), seasonal = list(order = c(0, 1, 2), period = p),
+          include.drift = TRUE, lambda = "auto", method = "ML")
+  }, error = function(e) NULL)
+  
+  if (!is.null(fit_1)) {
+    fcast_1 <- forecast(fit_1, h = h)
+    mae_1[i, 1:length(test)] <- abs(fcast_1[['mean']] - test)
+    rmse_1[i, 1:length(test)] <- (fcast_1[['mean']] - test)^2
+    aicc_1[i] <- fit_1$aicc
+  }
+  
+  if (!is.null(fit_2)) {
+    fcast_2 <- forecast(fit_2, h = h)
+    mae_2[i, 1:length(test)] <- abs(fcast_2[['mean']] - test)
+    rmse_2[i, 1:length(test)] <- (fcast_2[['mean']] - test)^2
+    aicc_2[i] <- fit_2$aicc
+  }
+}
+
+
+```
+
+```{r}
+# Calculate mean MAE and RMSE
+mean_mae_1 <- rowMeans(mae_1, na.rm = TRUE)
+mean_rmse_1 <- sqrt(rowMeans(rmse_1, na.rm = TRUE))
+
+mean_mae_2 <- rowMeans(mae_2, na.rm = TRUE)
+mean_rmse_2 <- sqrt(rowMeans(rmse_2, na.rm = TRUE))
+
+# Prepare data for plotting
+results <- data.frame(
+  Iteration = 1:(n - k),
+  MAE_Expanding = mean_mae_1,
+  RMSE_Expanding = mean_rmse_1,
+  AICc_Expanding = aicc_1,
+  MAE_Sliding = mean_mae_2,
+  RMSE_Sliding = mean_rmse_2,
+  AICc_Sliding = aicc_2
+)
+
+# Plotting MAE, RMSE, and AICc
+ggplot(results, aes(x = Iteration)) +
+  geom_line(aes(y = MAE_Expanding, color = "MAE_Expanding")) +
+  geom_line(aes(y = MAE_Sliding, color = "MAE_Sliding")) +
+  labs(title = "MAE over Iterations", y = "MAE", x = "Iteration")
+
+ggplot(results, aes(x = Iteration)) +
+  geom_line(aes(y = RMSE_Expanding, color = "RMSE_Expanding")) +
+  geom_line(aes(y = RMSE_Sliding, color = "RMSE_Sliding")) +
+  labs(title = "RMSE over Iterations", y = "RMSE", x = "Iteration")
+
+ggplot(results, aes(x = Iteration)) +
+  geom_line(aes(y = AICc_Expanding, color = "AICc_Expanding")) +
+  geom_line(aes(y = AICc_Sliding, color = "AICc_Sliding")) +
+  labs(title = "AICc over Iterations", y = "AICc", x = "Iteration")
+```
+
+
+```{r}
+mae_3 <- matrix(NA,n-k,h)
+mae_4 <- matrix(NA,n-k,h)
+
+rmse_3 <- matrix(NA, n - k, h)
+aicc_3 <- numeric(n - k)
+rmse_4 <- matrix(NA, n - k, h)
+aicc_4 <- numeric(n - k)
+
+# ets
+for(i in 1:(n-k))
+{
+  ### One Month (observation) rolling forecasting
+  
+  # Expanding Window 
+  train_1 <- window(visitors_ts, end=st + i/p)  ## Window Length: k+i
+  
+  # Sliding Window - keep the training window of fixed length. 
+  # The training set always consists of k observations.
+  train_2 <- window(visitors_ts, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  
+  test <- window(visitors_ts, start=st + (i+1)/p, end=st + (i+h)/p) ## Window Length: H
+
+  if (i<4) {
+  cat(c("*** CV", i,":","len(Expanding Window):",length(train_1), "len(Sliding Window):",length(train_2), "len(Test):",length(test),'\n'  ))
+  cat(c("*** TRAIN -  Expanding WIndow:",tsp(train_1)[1],'-',tsp(train_1)[2],'\n'))
+  cat(c("*** TRAIN - Sliding WIndow:",tsp(train_2)[1],'-',tsp(train_2)[2],'\n'))
+  cat(c("*** TEST:",tsp(test)[1],'-',tsp(test)[2],'\n'))
+  cat("*************************** \n \n")
+  }
+  
+  # ets model for expanding window
+  fit_3 <- ets(train_1, model = "MAM")
+  
+  # ets model for sliding window
+  fit_4 <- ets(train_2, model = "MAM")
+  
+  if (!is.null(fit_3)) {
+    fcast_3 <- forecast(fit_3, h = h)
+    mae_3[i, 1:length(test)] <- abs(fcast_3[['mean']] - test)
+    rmse_3[i, 1:length(test)] <- (fcast_3[['mean']] - test)^2
+    aicc_3[i] <- fit_3$aicc
+  }
+  
+  if (!is.null(fit_4)) {
+    fcast_4 <- forecast(fit_4, h = h)
+    mae_4[i, 1:length(test)] <- abs(fcast_4[['mean']] - test)
+    rmse_4[i, 1:length(test)] <- (fcast_4[['mean']] - test)^2
+    aicc_4[i] <- fit_4$aicc
+  }
+}
+
+```
+
+```{r}
+# Calculate mean MAE and RMSE
+mean_mae_3 <- rowMeans(mae_3, na.rm = TRUE)
+mean_rmse_3 <- sqrt(rowMeans(rmse_3, na.rm = TRUE))
+
+mean_mae_4 <- rowMeans(mae_4, na.rm = TRUE)
+mean_rmse_4 <- sqrt(rowMeans(rmse_4, na.rm = TRUE))
+
+# Prepare data for plotting
+results <- data.frame(
+  Iteration = 1:(n - k),
+  MAE_Expanding = mean_mae_3,
+  RMSE_Expanding = mean_rmse_3,
+  AICc_Expanding = aicc_3,
+  MAE_Sliding = mean_mae_4,
+  RMSE_Sliding = mean_rmse_4,
+  AICc_Sliding = aicc_4
+)
+
+# Plotting MAE, RMSE, and AICc
+ggplot(results, aes(x = Iteration)) +
+  geom_line(aes(y = MAE_Expanding, color = "MAE_Expanding")) +
+  geom_line(aes(y = MAE_Sliding, color = "MAE_Sliding")) +
+  labs(title = "MAE over Iterations", y = "MAE", x = "Iteration")
+
+ggplot(results, aes(x = Iteration)) +
+  geom_line(aes(y = RMSE_Expanding, color = "RMSE_Expanding")) +
+  geom_line(aes(y = RMSE_Sliding, color = "RMSE_Sliding")) +
+  labs(title = "RMSE over Iterations", y = "RMSE", x = "Iteration")
+
+ggplot(results, aes(x = Iteration)) +
+  geom_line(aes(y = AICc_Expanding, color = "AICc_Expanding")) +
+  geom_line(aes(y = AICc_Sliding, color = "AICc_Sliding")) +
+  labs(title = "AICc over Iterations", y = "AICc", x = "Iteration")
+```
+
+#### Discuss your results
+When comparing the the MAE Plots, we see that for the ARIMA model, the MAE for both expanding and sliding windows fluctuates over the iterations. There are several spikes in MAE, especially around iterations 40 and 60, indicating periods where the model's predictions were significantly off. The sliding window generally has slightly lower MAE values compared to the expanding window. The ETS Model is similar to the ARIMA model - the MAE for both expanding and sliding windows fluctuates over the iterations. There are noticeable spikes in MAE, especially around iteration 60, indicating periods of poorer performance. The sliding window again generally shows slightly lower MAE values compared to the expanding window. When looking at the RMSE plots, for the ARIMA model, the RMSE also shows fluctuations similar to MAE. Spikes around iterations 40 and 60 suggest the same periods of poor performance. The sliding window generally has slightly lower RMSE values compared to the expanding window. The RMSE plot for the ETS model also fluctuates similarly to MAE. Spikes around iteration 60 again indicate poorer performance during those periods. Sliding window generally shows slightly lower RMSE values compared to the expanding window. Finally, looking at the AICc for the ARIMA model, the AICc for the expanding window shows a clear upward trend over iterations, indicating increasing model complexity or decreasing fit quality. The sliding window's AICc remains relatively stable and lower compared to the expanding window, indicating a more consistent model performance. The ETS AICc plot for the expanding window shows an upward trend over iterations, similar to the ARIMA model. The sliding window's AICc remains relatively stable and lower compared to the expanding window.
+
+## Question 4
+What are the disadvantages of the above methods? What would be a better approach to estimate the
+models? Hint: How were the SARIMA and exponential time series models determined in question 3?
+
+The expanding and sliding window cross-validation methods, while robust, have several disadvantages. They are computationally intensive, requiring significant time and resources to fit models repeatedly across different training sets, especially with larger data sets. This process can also lead to instability in parameter estimates over time, as seen in the expanding window method, where the training set grows continuously. Additionally, both methods may lag in responding to structural changes in the data, as they heavily rely on historical trends that might not quickly adapt to recent developments. The sliding window approach, in particular, can miss capturing long-term trends if the window size is too short, or fail to adapt swiftly to changes if the window is too long. A more effective alternative is walk-forward validation, which mimics real-world forecasting scenarios by training on the most recent data and testing on subsequent points, thus providing a more accurate assessment of model performance. This method avoids overestimating predictive power by ensuring that the model only predicts unseen data. Additionally, using information criteria-based model selection, such as AIC, AICc, or BIC, offers a quicker and efficient way to choose models, balancing fit and complexity without requiring separate validation sets. Automated model selection tools like auto.arima and ets further streamline this process by efficiently exploring a wide range of models, incorporating necessary transformations, differencing, and seasonal adjustments. These approaches ensure that models are both accurate and generalizable, leveraging the latest data and accounting for model complexity.
+

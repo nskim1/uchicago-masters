@@ -1,0 +1,240 @@
+---
+title: "Assignment 5"
+author: "Natalie Kim"
+date: "2024-07-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+library(TSA)
+library(ggplot2)
+library(forecast)
+library(tseries)
+```
+
+## Question 1
+Load the condmilk.rda dataset and split it into a training dataset (1971/1 – 1979/12) and a test dataset
+(1980/1 – 1980/12)
+
+```{r}
+load("condmilk.rda")
+
+train <- window(condmilk, start = c(1971,1), end = c(1979,12))
+test <- window(condmilk, start = c(1980,1), end = c(1980, 12))
+```
+
+## Question 2
+Plot the training dataset.
+
+#### Is Box-Cox transformation necessary for this data? Why?
+The plot of our training dataset shows a high degree of seasonality and an unstabilized variance. We can see this from the fluctuating amplitude of each of each season - some seasons it's a greater amplitude such as 1971 to 1972 versus smaller amplitudes such as 1975 to 1976. These observations confirmt that we will need to apply a Box-Cox transformation to the data.
+
+```{r}
+autoplot(train, xlab = "Year", ylab = "Stock of cond. milk", main = "Plot of training dataset")
+```
+
+## Question 3
+#### Is the training dataset stationary? If not, find an appropriate differencing which yields seasonal and trend stationary training dataset. Plot the ACF and PACF to determine if the detrended and deseasonalized time series is stationary.
+The training data set is stationary because KPSS test for stationarity returns a p-value of 0.1. This value tells us we failed to reject the null hypothesis that the process is stationary. I also confirmed this through the ADF test which has a null hypothesis that the process is non-stationary. This p-value is 0.01 < 0.05, therefore we can reject the null and confirm that the training set is stationary.
+
+#### Plot the ACF and PACF to determine if the detrended and deseasonalized time series is stationary.
+After applying the ACF and PACF, can confirm that this stationary with several observations. First, we see that the ACF shows symmetry around 0, and second, though the PACF has a significant first lab, the rest of the lags have partial autocorrelation that are within the boundaries of the statistical significance.
+
+```{r}
+# to determine stationarity, apply KPSS test and ADF test
+kpss.test(train)
+
+adf.test(train)
+
+# Detrending & Deseasonalizing Process
+# apply Box-Cox Transformation
+lambda <- BoxCox.lambda(train)
+train_bc <- BoxCox(train, lambda)
+
+# Plotting ACF and PACF
+tsdisplay(train_bc, main="Training Data with Box-Cox Transformation")
+```
+
+## Question 4
+Build two 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃, 𝑄, 𝐷)𝑠 models using the training dataset and auto.arima() function.
+
+- Model 1: Let the auto.arima() function determine the best order of non-seasonal and seasonal differencing.
+- Model 2: Set the order of seasonal-differencing 𝑑 to 1 and 𝐷 to 1.
+
+Report the resulting 𝑝, 𝑑, 𝑞, 𝑃, 𝐷, 𝑄, 𝑠 and the coefficients values for all cases and compare their AICc and BIC values.
+
+#### Discuss the generated models’ characteristics.
+In the first model, auto.arima determined the non-seasonal order non-seasonal to be p=1, d=0, and q=0, and the seasonal order to be P=2, D=1, Q=0, and s=12. In the second model, we set the order of the differencing (d=1, D=1): the rest of the non-seasonal order were p=1 and q=1, and the rest of the seasonal orer were P=2, Q=0, and s=12. This first model includes a single non-seasonal autoregressive term and two seasonal autoregressive terms with seasonal differencing. It has a very low AIC, AICc, and BIC, indicating a good fit to the data. The error metrics (RMSE and MAE) are slightly higher than those of Model 2, but still within an acceptable range. The residuals are nearly white noise, as indicated by the low ACF1 value. Thes second model includes a non-seasonal autoregressive term, a non-seasonal moving average term, and two seasonal autoregressive terms with both non-seasonal and seasonal differencing. It has a slightly higher AIC, AICc, and BIC compared to Model 1, but the error metrics (RMSE and MAE) are marginally lower. The inclusion of the non-seasonal moving average term seems to have provided a slight improvement in predictive accuracy. The residuals are also nearly white noise, as indicated by the low ACF1 value. Overall, Model 1 is preferred based on the information criteria (AIC, AICc, BIC) as it provides a better overall fit to the data. However, Model 2 has slightly better predictive accuracy based on RMSE and MAE, suggesting it might perform better in forecasting. Both models have residuals that approximate white noise, indicating they are well-fitted.
+
+```{r}
+# first arima model
+model1 <- auto.arima(train, lambda = lambda, seasonal = TRUE)
+summary(model1)
+
+# second arima model
+model2 <- auto.arima(train, lambda = lambda, seasonal = TRUE, d = 1, D = 1)
+summary(model2)
+```
+
+## Question 5
+Plot the residuals ACF of both models from part 4 and use the Ljung-Box Test with lag 12 to verify your
+conclusion
+
+When looking at the residual ACF plots, all lags for both models except at lag = 0.4 are within the confidence bands. Neither appear to have any systematic pattern in the autocorrelations, and do appear to look like white noise. We additionally ran the Ljung-Box Test with lag 12 to confirm our conclusion: that the series of residuals is white noise. The p-values of Model 1 and Model 2 are 0.06308 and 0.07249 respectively. Given that both have p-values that are greather than 0.05, we fail to reject the null hypothesis and thus can confirm our conclusion.
+
+```{r}
+# Residual Plots of Model 1
+Acf(model1$residuals, main = "ACF of Residuals of Model 1")
+
+# Residual Plots of Model 2
+Acf(model2$residuals, main = "ACF of Residuals of Model 2")
+
+# Ljung-Box Test with lag 12
+Box.test(model1$residuals, type =  "Ljung-Box", lag = 12)
+Box.test(model2$residuals, type =  "Ljung-Box", lag = 12)
+```
+
+## Question 6
+Use both models from part 4 and the h-period argument in the forecast() function to forecast each
+month of 1980 (i.e., Jan, Feb, …, Dec.) Plot the test dataset and forecasted values.
+
+```{r}
+# model 1 forecast
+forecast1 <- forecast(model1, h=12) # h=12 to forecast each month
+
+# model 2 forecast
+forecast2 <- forecast(model2, h=12)
+
+# Plot test dataset and forecasted values
+test_df <- as.data.frame(test)
+forecast1_df <- as.data.frame(forecast1$mean)
+forecast2_df <- as.data.frame(forecast2$mean)
+
+forecast1_ts <- ts(forecast1_df, start = c(1980, 1), frequency = 12)
+forecast2_ts <- ts(forecast2_df, start = c(1980, 1), frequency = 12)
+
+autoplot(train) +
+  autolayer(test, series = "Test Data") +
+  autolayer(forecast1_ts, series = "Forecast Model 1") +
+  autolayer(forecast2_ts, series = "Forecast Model 2") +
+  ggtitle("Forecasts for Each Month of 1980") +
+  xlab("Year") + ylab("Milk Stock") +
+  guides(colour = guide_legend(title = "Series")) +
+  theme_minimal()
+```
+
+
+## Question 7
+Compare the forecast with the actual test data by calculating the Mean Absolute Percentage Error
+(MAPE) and Mean Squared Error (MSE).
+
+##### Which model is better to forecast the Manufacturer's Stocks for each month of 1980 (i.e., Jan, Feb, …, Dec)? Why?
+From the results returned ot us from the MAPE and MSE calculations, Model 1 appears to be the better model. Both the MAPE and MSE are very close to each other for both models, and actually though Model has a smaller MAPE, Model 2 actually has a lower MSE. However, if we compare the differences for these two values, we see that the MAPE difference is 0.03596 compared to 0.00521. 
+
+```{r}
+# MAPE
+mape_model1 <- mean(abs((test - forecast1_ts) / test)) * 100
+mape_model2 <- mean(abs((test - forecast2_ts) / test)) * 100
+
+print(paste("MAPE for Model 1: ", mape_model1))
+print(paste("MAPE for Model 2: ", mape_model2))
+
+# MSE
+mse_model1 <- mean((test - forecast1_ts)^2)
+mse_model2 <- mean((test - forecast2_ts)^2)
+
+print(paste("MSE for Model 1: ", mse_model1))
+print(paste("MSE for Model 2: ", mse_model2))
+```
+
+
+## Question 8
+Forecast each month of 1980 (i.e., Jan, Feb, …, Dec.) using the seasonal naïve forecast method. Plot the
+test dataset and forecasted values and compare the forecast with the actual test data by calculating the
+Mean Absolute Percentage Error (MAPE) and Mean Squared Error (MSE).
+
+```{r}
+forecast_naive <- snaive(train, h=12)
+
+autoplot(train) +
+  autolayer(test, series = "Test Data") +
+  autolayer(forecast_naive, series = "Naive Forecast") +
+  ggtitle("Forecasts for Each Month of 1980") +
+  xlab("Year") + ylab("Milk Stock") +
+  guides(colour = guide_legend(title = "Series")) +
+  theme_minimal()
+
+mape_naive <- mean(abs((test - forecast_naive$mean) / test)) * 100
+print(paste("MAPE for Naive Model: ", mape_naive))
+
+mse_naive <- mean((test - forecast_naive$mean)^2)
+print(paste("MSE for Naive: ", mse_naive))
+```
+
+
+## Question 9
+Use the snaive() function to forecast each month of 1980 (i.e., Test Period.) Did your best model beat
+the seasonal naïve approach?
+
+No, the best model that I had - model 1 - did not beat the seasonal naive approach. Both the MAPE and MSE of the Naive model was less than Model 1, thus it outperformed the ARIMA model as a stronger fit to the seasonal patterns in 1980.
+
+## Question 10
+Assume you decide to fit the following model. Where the estimated parameters are 𝑐 = 30993, 𝜙1 = 0.82, 𝜙2 = −0.29, 𝜙3 = −0.01, 𝑎𝑛𝑑 𝜙4 = −0.22. Without using the forecast() function, calculate forecasts for the next three observation.
+
+Wasn't sure if this was from the train dataset or from the test dataset so I did both.
+
+```{r}
+## Training Data
+c <- 30993
+phi1 <- 0.82
+phi2 <- -0.29
+phi3 <- -0.01
+phi4 <- -0.22
+
+# last four actual values 
+last_vals <- tail(train, 4)
+y_t1 <- last_vals[4]
+y_t2 <- last_vals[3]
+y_t3 <- last_vals[2]
+t_t4 <- last_vals[1]
+
+# forecasts of next three observations
+Y_T1 <- c + phi1*y_t1 + phi2*y_t2 + phi3*y_t3 + phi4*t_t4
+Y_T2 <- c + phi1*Y_T1 + phi2*y_t1 + phi3*y_t2 + phi4*y_t3
+Y_T3 <- c + phi1*Y_T2 + phi2*Y_T1 + phi3*y_t1 + phi4*y_t2
+
+print(paste("Forecast for Y_T+1:", Y_T1))
+print(paste("Forecast for Y_T+2:", Y_T2))
+print(paste("Forecast for Y_T+3:", Y_T3))
+```
+```{r}
+## Training Data
+c <- 30993
+phi1 <- 0.82
+phi2 <- -0.29
+phi3 <- -0.01
+phi4 <- -0.22
+
+# last four actual values 
+last_vals_test <- tail(test, 4)
+y_t1_2 <- last_vals_test[4]
+y_t2_2 <- last_vals_test[3]
+y_t3_2 <- last_vals_test[2]
+t_t4_2 <- last_vals_test[1]
+
+# forecasts of next three observations
+Y_T1_2 <- c + phi1*y_t1_2 + phi2*y_t2_2 + phi3*y_t3_2 + phi4*t_t4_2
+Y_T2_2 <- c + phi1*Y_T1_2 + phi2*y_t1_2 + phi3*y_t2_2 + phi4*y_t3_2
+Y_T3_2 <- c + phi1*Y_T2_2 + phi2*Y_T1_2 + phi3*y_t1_2 + phi4*y_t2_2
+
+print(paste("Forecast for Y_T+1:", Y_T1_2))
+print(paste("Forecast for Y_T+2:", Y_T2_2))
+print(paste("Forecast for Y_T+3:", Y_T3_2))
+```
+
+
+
